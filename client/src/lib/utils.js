@@ -34,7 +34,8 @@ export function formatNumber(num) {
   return num.toString();
 }
 
-export const API_BASE = '/api';
+export const API_BASE = import.meta.env.VITE_API_URL || '/api';
+
 
 export async function api(endpoint, options = {}) {
   const token = localStorage.getItem('token');
