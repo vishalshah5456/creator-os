@@ -1,11 +1,61 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { Pool } = require('pg');
 
-const dbPath = path.join(__dirname, 'creatoros.db');
-const db = new sqlite3.Database(dbPath);
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is required. Add your Supabase Postgres URL in Render environment variables.');
+}
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+
+function toPostgresQuery(sql) {
+  let paramIndex = 0;
+  return sql.replace(/\?/g, () => `$${++paramIndex}`);
+}
+
+const db = {
+  serialize(fn) {
+    fn();
+  },
+
+  async run(sql, params = [], callback) {
+    if (typeof params === 'function') {
+      callback = params;
+      params = [];
+    }
+
+    try {
+      const result = await pool.query(toPostgresQuery(sql), params);
+      if (callback) callback.call({ changes: result.rowCount }, null);
+    } catch (err) {
+      console.error('Database run error:', err.message);
+      if (callback) callback(err);
+    }
+  },
+
+  async get(sql, params = [], callback) {
+    try {
+      const result = await pool.query(toPostgresQuery(sql), params);
+      callback(null, result.rows[0]);
+    } catch (err) {
+      console.error('Database get error:', err.message);
+      callback(err);
+    }
+  },
+
+  async all(sql, params = [], callback) {
+    try {
+      const result = await pool.query(toPostgresQuery(sql), params);
+      callback(null, result.rows);
+    } catch (err) {
+      console.error('Database all error:', err.message);
+      callback(err);
+    }
+  },
+};
 
 db.serialize(() => {
-  // Users table
   db.run(`CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
@@ -17,10 +67,9 @@ db.serialize(() => {
     niche TEXT,
     followers INTEGER DEFAULT 0,
     platforms TEXT DEFAULT '[]',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   )`);
 
-  // Deals table
   db.run(`CREATE TABLE IF NOT EXISTS deals (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -38,12 +87,11 @@ db.serialize(() => {
     start_date TEXT,
     end_date TEXT,
     notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
   )`);
 
-  // Content items table
   db.run(`CREATE TABLE IF NOT EXISTS content (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -55,12 +103,11 @@ db.serialize(() => {
     published_date TEXT,
     performance_metrics TEXT DEFAULT '{}',
     deal_id TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (deal_id) REFERENCES deals(id)
   )`);
 
-  // Income entries table
   db.run(`CREATE TABLE IF NOT EXISTS income (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -72,12 +119,11 @@ db.serialize(() => {
     description TEXT,
     category TEXT DEFAULT 'brand_deal',
     status TEXT DEFAULT 'received',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (deal_id) REFERENCES deals(id)
   )`);
 
-  // Rate cards table
   db.run(`CREATE TABLE IF NOT EXISTS rate_cards (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -89,11 +135,11 @@ db.serialize(() => {
     engagement_rate REAL,
     demographics TEXT DEFAULT '{}',
     pricing_tiers TEXT DEFAULT '[]',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
   )`);
 
-  console.log('Database initialized successfully');
+  console.log('Postgres database initialized successfully');
 });
 
 module.exports = db;

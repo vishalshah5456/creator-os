@@ -245,11 +245,11 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
 
   db.get('SELECT COUNT(*) as total_deals FROM deals WHERE user_id = ?', [userId], (err, dealsCount) => {
     db.get('SELECT COUNT(*) as total_content FROM content WHERE user_id = ?', [userId], (err, contentCount) => {
-      db.get('SELECT SUM(amount) as total_income FROM income WHERE user_id = ? AND status = "received"', [userId], (err, incomeSum) => {
-        db.get('SELECT COUNT(*) as active_deals FROM deals WHERE user_id = ? AND pipeline_stage != "paid"', [userId], (err, activeDeals) => {
-          db.all('SELECT strftime("%Y-%m", date) as month, SUM(amount) as amount FROM income WHERE user_id = ? GROUP BY month ORDER BY month DESC LIMIT 6', [userId], (err, monthlyIncome) => {
+      db.get("SELECT SUM(amount) as total_income FROM income WHERE user_id = ? AND status = 'received'", [userId], (err, incomeSum) => {
+        db.get("SELECT COUNT(*) as active_deals FROM deals WHERE user_id = ? AND pipeline_stage != 'paid'", [userId], (err, activeDeals) => {
+          db.all("SELECT TO_CHAR(date::date, 'YYYY-MM') as month, SUM(amount) as amount FROM income WHERE user_id = ? GROUP BY month ORDER BY month DESC LIMIT 6", [userId], (err, monthlyIncome) => {
             db.all('SELECT pipeline_stage, COUNT(*) as count FROM deals WHERE user_id = ? GROUP BY pipeline_stage', [userId], (err, pipelineStats) => {
-              db.all('SELECT source, SUM(amount) as amount FROM income WHERE user_id = ? AND status = "received" GROUP BY source ORDER BY amount DESC LIMIT 5', [userId], (err, incomeSources) => {
+              db.all("SELECT source, SUM(amount) as amount FROM income WHERE user_id = ? AND status = 'received' GROUP BY source ORDER BY amount DESC LIMIT 5", [userId], (err, incomeSources) => {
                 res.json({
                   stats: {
                     totalDeals: dealsCount?.total_deals || 0,
