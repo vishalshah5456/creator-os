@@ -298,6 +298,8 @@ app.post('/api/rate-cards', authMiddleware, (req, res) => {
   );
 });
 
-app.listen(PORT, () => {
-  console.log('CreatorOS API running on port ' + PORT);
+db.ready.then(() => {
+  app.listen(PORT, () => {
+    console.log('CreatorOS API running on port ' + PORT);
+  });
 });

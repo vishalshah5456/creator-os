@@ -15,10 +15,6 @@ function toPostgresQuery(sql) {
 }
 
 const db = {
-  serialize(fn) {
-    fn();
-  },
-
   async run(sql, params = [], callback) {
     if (typeof params === 'function') {
       callback = params;
@@ -55,8 +51,8 @@ const db = {
   },
 };
 
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS users (
+async function initializeDatabase() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
@@ -70,7 +66,7 @@ db.serialize(() => {
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS deals (
+  await pool.query(`CREATE TABLE IF NOT EXISTS deals (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     brand_name TEXT NOT NULL,
@@ -92,7 +88,7 @@ db.serialize(() => {
     FOREIGN KEY (user_id) REFERENCES users(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS content (
+  await pool.query(`CREATE TABLE IF NOT EXISTS content (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -108,7 +104,7 @@ db.serialize(() => {
     FOREIGN KEY (deal_id) REFERENCES deals(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS income (
+  await pool.query(`CREATE TABLE IF NOT EXISTS income (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     source TEXT NOT NULL,
@@ -124,7 +120,7 @@ db.serialize(() => {
     FOREIGN KEY (deal_id) REFERENCES deals(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS rate_cards (
+  await pool.query(`CREATE TABLE IF NOT EXISTS rate_cards (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -140,6 +136,11 @@ db.serialize(() => {
   )`);
 
   console.log('Postgres database initialized successfully');
+}
+
+db.ready = initializeDatabase().catch((err) => {
+  console.error('Database initialization failed:', err);
+  process.exit(1);
 });
 
 module.exports = db;
