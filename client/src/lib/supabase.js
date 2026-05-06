@@ -11,3 +11,5 @@ export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder-key'
 );
+
+export const appUrl = import.meta.env.VITE_APP_URL || window.location.origin;
