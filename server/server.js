@@ -79,14 +79,15 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
   const avatar = metadata.avatar_url || metadata.picture || null;
 
   db.run(
-    `INSERT INTO users (id, email, name, handle, avatar)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO users (id, auth_id, email, name, handle, avatar)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT (id) DO UPDATE SET
+       auth_id = COALESCE(users.auth_id, EXCLUDED.auth_id),
        email = EXCLUDED.email,
        name = COALESCE(users.name, EXCLUDED.name),
        handle = COALESCE(users.handle, EXCLUDED.handle),
        avatar = COALESCE(users.avatar, EXCLUDED.avatar)`,
-    [req.userId, email, name, handle, avatar],
+    [req.userId, authUser.id, email, name, handle, avatar],
     (err, user) => {
       if (err) {
         return res.status(500).json({ error: err.message });

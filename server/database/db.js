@@ -54,6 +54,7 @@ const db = {
 async function initializeDatabase() {
   await pool.query(`CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
+    auth_id TEXT UNIQUE,
     email TEXT UNIQUE NOT NULL,
     password TEXT,
     name TEXT,
@@ -66,6 +67,7 @@ async function initializeDatabase() {
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   )`);
 
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_id TEXT UNIQUE');
   await pool.query('ALTER TABLE users ALTER COLUMN password DROP NOT NULL');
 
   await pool.query(`CREATE TABLE IF NOT EXISTS deals (
