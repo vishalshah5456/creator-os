@@ -55,7 +55,7 @@ async function initializeDatabase() {
   await pool.query(`CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
+    password TEXT,
     name TEXT,
     handle TEXT,
     avatar TEXT,
@@ -65,6 +65,8 @@ async function initializeDatabase() {
     platforms TEXT DEFAULT '[]',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   )`);
+
+  await pool.query('ALTER TABLE users ALTER COLUMN password DROP NOT NULL');
 
   await pool.query(`CREATE TABLE IF NOT EXISTS deals (
     id TEXT PRIMARY KEY,

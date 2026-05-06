@@ -71,14 +71,38 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.get('/api/auth/me', authMiddleware, (req, res) => {
-  db.get('SELECT id, email, name, handle, avatar, bio, niche, followers, platforms FROM users WHERE id = ?', 
-    [req.userId], 
+  const authUser = req.authUser;
+  const metadata = authUser?.user_metadata || {};
+  const email = authUser?.email;
+  const name = metadata.name || metadata.full_name || email?.split('@')[0] || 'Creator';
+  const handle = metadata.handle || metadata.preferred_username || email?.split('@')[0] || 'creator';
+  const avatar = metadata.avatar_url || metadata.picture || null;
+
+  db.run(
+    `INSERT INTO users (id, email, name, handle, avatar)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET
+       email = EXCLUDED.email,
+       name = COALESCE(users.name, EXCLUDED.name),
+       handle = COALESCE(users.handle, EXCLUDED.handle),
+       avatar = COALESCE(users.avatar, EXCLUDED.avatar)`,
+    [req.userId, email, name, handle, avatar],
     (err, user) => {
-      if (err || !user) {
-        return res.status(404).json({ error: 'User not found' });
+      if (err) {
+        return res.status(500).json({ error: err.message });
       }
-      user.platforms = JSON.parse(user.platforms || '[]');
-      res.json(user);
+
+      db.get(
+        'SELECT id, email, name, handle, avatar, bio, niche, followers, platforms FROM users WHERE id = ?',
+        [req.userId],
+        (err, user) => {
+          if (err || !user) {
+            return res.status(404).json({ error: 'User not found' });
+          }
+          user.platforms = JSON.parse(user.platforms || '[]');
+          res.json(user);
+        }
+      );
     }
   );
 });
