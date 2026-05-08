@@ -29,6 +29,7 @@ export default function Dashboard() {
   const stats = data?.stats || {};
   const monthlyIncome = data?.monthlyIncome || [];
   const pipelineStats = data?.pipelineStats || [];
+  const contentStatusStats = data?.contentStatusStats || [];
 
   const incomeData = monthlyIncome.map(m => ({
     month: m.month,
@@ -41,6 +42,7 @@ export default function Dashboard() {
   };
 
   const incomeSources = data?.incomeSources || [];
+  const contentStatusCount = (status) => contentStatusStats.find(item => item.status === status)?.count || 0;
 
   const cardDetails = {
     totalDeals: {
@@ -65,9 +67,9 @@ export default function Dashboard() {
       title: 'Content Pieces',
       description: 'Total content items planned or published across all platforms.',
       breakdown: [
-        { label: 'Published', value: Math.floor((stats.totalContent || 0) * 0.6) },
-        { label: 'Scheduled', value: Math.floor((stats.totalContent || 0) * 0.3) },
-        { label: 'Draft', value: Math.floor((stats.totalContent || 0) * 0.1) },
+        { label: 'Published', value: contentStatusCount('published') },
+        { label: 'Scheduled', value: contentStatusCount('scheduled') },
+        { label: 'Draft', value: contentStatusCount('draft') },
       ]
     },
     totalIncome: {

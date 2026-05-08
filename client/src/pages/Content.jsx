@@ -13,6 +13,8 @@ import {
   Clock,
   AlertCircle,
   X,
+  Pencil,
+  Trash2,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -35,6 +37,9 @@ export default function Content() {
   const [filterPlatform, setFilterPlatform] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingContent, setEditingContent] = useState(null);
+  const [contentToDelete, setContentToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState('list');
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
@@ -43,7 +48,7 @@ export default function Content() {
   }, []);
 
   const loadContent = () => {
-    api('/content')
+    return api('/content')
       .then(data => setContent(data))
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -71,6 +76,33 @@ export default function Content() {
       case 'published': return 'bg-green-100 text-green-700';
       case 'scheduled': return 'bg-blue-100 text-blue-700';
       default: return 'bg-amber-100 text-amber-700';
+    }
+  };
+
+  const updateStatus = async (item, status) => {
+    try {
+      await api(`/content/${item.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status })
+      });
+      await loadContent();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteContent = async () => {
+    if (!contentToDelete) return;
+
+    setDeleting(true);
+    try {
+      await api(`/content/${contentToDelete.id}`, { method: 'DELETE' });
+      await loadContent();
+      setContentToDelete(null);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -166,6 +198,8 @@ export default function Content() {
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Type</th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Status</th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Date</th>
+                  <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Progress</th>
+                  <th className="text-right text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -205,12 +239,35 @@ export default function Content() {
                           {item.scheduled_date ? formatDate(item.scheduled_date) : 'Not scheduled'}
                         </span>
                       </td>
+                      <td className="px-6 py-4">
+                        <StatusStepper status={item.status} onChange={(status) => updateStatus(item, status)} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditingContent(item)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                            title="Edit content"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setContentToDelete(item)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                            title="Delete content"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
                 {filteredContent.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
                       No content found
                     </td>
                   </tr>
@@ -293,17 +350,91 @@ export default function Content() {
       {showAddModal && (
         <ContentModal onClose={() => setShowAddModal(false)} onSuccess={loadContent} />
       )}
+
+      {editingContent && (
+        <ContentModal
+          contentItem={editingContent}
+          onClose={() => setEditingContent(null)}
+          onSuccess={loadContent}
+        />
+      )}
+
+      {contentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900">Delete content?</h2>
+              <button onClick={() => setContentToDelete(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-600">
+                This will permanently remove <span className="font-semibold text-gray-900">{contentToDelete.title}</span> from your content calendar.
+              </p>
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setContentToDelete(null)}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteContent}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ContentModal({ onClose, onSuccess }) {
+function StatusStepper({ status, onChange }) {
+  const steps = [
+    { id: 'draft', label: 'D' },
+    { id: 'scheduled', label: 'S' },
+    { id: 'published', label: 'P' },
+  ];
+  const activeIndex = Math.max(0, steps.findIndex(step => step.id === status));
+
+  return (
+    <div className="inline-flex items-center">
+      {steps.map((step, index) => (
+        <div key={step.id} className="flex items-center">
+          <button
+            type="button"
+            onClick={() => onChange(step.id)}
+            className={`h-7 w-7 rounded-full text-xs font-semibold transition-colors ${
+              index <= activeIndex ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+            title={step.id.charAt(0).toUpperCase() + step.id.slice(1)}
+          >
+            {step.label}
+          </button>
+          {index < steps.length - 1 && (
+            <div className={`h-0.5 w-5 ${index < activeIndex ? 'bg-brand-600' : 'bg-gray-200'}`} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ContentModal({ contentItem, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
-    title: '',
-    platform: 'instagram',
-    content_type: 'post',
-    status: 'draft',
-    scheduled_date: ''
+    title: contentItem?.title || '',
+    platform: contentItem?.platform || 'instagram',
+    content_type: contentItem?.content_type || 'post',
+    status: contentItem?.status || 'draft',
+    scheduled_date: contentItem?.scheduled_date || ''
   });
   const [saving, setSaving] = useState(false);
 
@@ -311,8 +442,8 @@ function ContentModal({ onClose, onSuccess }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api('/content', {
-        method: 'POST',
+      await api(contentItem ? `/content/${contentItem.id}` : '/content', {
+        method: contentItem ? 'PUT' : 'POST',
         body: JSON.stringify(formData)
       });
       onSuccess();
@@ -328,7 +459,7 @@ function ContentModal({ onClose, onSuccess }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <h2 className="text-lg font-semibold text-gray-900">Add Content</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{contentItem ? 'Edit Content' : 'Add Content'}</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -410,7 +541,7 @@ function ContentModal({ onClose, onSuccess }) {
               disabled={saving}
               className="flex-1 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Add Content'}
+              {saving ? 'Saving...' : contentItem ? 'Update Content' : 'Add Content'}
             </button>
           </div>
         </form>

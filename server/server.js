@@ -303,6 +303,51 @@ app.post('/api/content', authMiddleware, (req, res) => {
   );
 });
 
+app.put('/api/content/:id', authMiddleware, (req, res) => {
+  const { title, platform, content_type, status, scheduled_date, published_date, deal_id } = req.body;
+
+  db.get('SELECT * FROM content WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, currentContent) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!currentContent) return res.status(404).json({ error: 'Content not found' });
+
+    const nextStatus = status || currentContent.status;
+    const nextPublishedDate = published_date !== undefined
+      ? published_date
+      : nextStatus === 'published' && !currentContent.published_date
+        ? new Date().toISOString().split('T')[0]
+        : currentContent.published_date;
+
+    db.run(
+      `UPDATE content SET
+        title = ?, platform = ?, content_type = ?, status = ?,
+        scheduled_date = ?, published_date = ?, deal_id = ?
+       WHERE id = ? AND user_id = ?`,
+      [
+        title !== undefined ? title : currentContent.title,
+        platform || currentContent.platform,
+        content_type || currentContent.content_type,
+        nextStatus,
+        scheduled_date !== undefined ? scheduled_date : currentContent.scheduled_date,
+        nextPublishedDate,
+        deal_id !== undefined ? deal_id : currentContent.deal_id,
+        req.params.id,
+        req.userId
+      ],
+      function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ updated: this.changes });
+      }
+    );
+  });
+});
+
+app.delete('/api/content/:id', authMiddleware, (req, res) => {
+  db.run('DELETE FROM content WHERE id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ deleted: this.changes });
+  });
+});
+
 // Income routes
 app.get('/api/income', authMiddleware, (req, res) => {
   db.run(
@@ -364,21 +409,24 @@ app.get('/api/dashboard', authMiddleware, (req, res) => {
 
   db.get('SELECT COUNT(*) as total_deals FROM deals WHERE user_id = ?', [userId], (err, dealsCount) => {
     db.get('SELECT COUNT(*) as total_content FROM content WHERE user_id = ?', [userId], (err, contentCount) => {
-      db.get("SELECT SUM(amount) as total_income FROM income WHERE user_id = ? AND status = 'received'", [userId], (err, incomeSum) => {
-        db.get("SELECT COUNT(*) as active_deals FROM deals WHERE user_id = ? AND pipeline_stage != 'paid'", [userId], (err, activeDeals) => {
-          db.all("SELECT TO_CHAR(date::date, 'YYYY-MM') as month, SUM(amount) as amount FROM income WHERE user_id = ? GROUP BY month ORDER BY month DESC LIMIT 6", [userId], (err, monthlyIncome) => {
-            db.all('SELECT pipeline_stage, COUNT(*) as count FROM deals WHERE user_id = ? GROUP BY pipeline_stage', [userId], (err, pipelineStats) => {
-              db.all("SELECT source, SUM(amount) as amount FROM income WHERE user_id = ? AND status = 'received' GROUP BY source ORDER BY amount DESC LIMIT 5", [userId], (err, incomeSources) => {
-                res.json({
-                  stats: {
-                    totalDeals: dealsCount?.total_deals || 0,
-                    totalContent: contentCount?.total_content || 0,
-                    totalIncome: incomeSum?.total_income || 0,
-                    activeDeals: activeDeals?.active_deals || 0
-                  },
-                  monthlyIncome: monthlyIncome || [],
-                  pipelineStats: pipelineStats || [],
-                  incomeSources: incomeSources || []
+      db.all('SELECT status, COUNT(*) as count FROM content WHERE user_id = ? GROUP BY status', [userId], (err, contentStatusStats) => {
+        db.get("SELECT SUM(amount) as total_income FROM income WHERE user_id = ? AND status = 'received'", [userId], (err, incomeSum) => {
+          db.get("SELECT COUNT(*) as active_deals FROM deals WHERE user_id = ? AND pipeline_stage != 'paid'", [userId], (err, activeDeals) => {
+            db.all("SELECT TO_CHAR(date::date, 'YYYY-MM') as month, SUM(amount) as amount FROM income WHERE user_id = ? GROUP BY month ORDER BY month DESC LIMIT 6", [userId], (err, monthlyIncome) => {
+              db.all('SELECT pipeline_stage, COUNT(*) as count FROM deals WHERE user_id = ? GROUP BY pipeline_stage', [userId], (err, pipelineStats) => {
+                db.all("SELECT source, SUM(amount) as amount FROM income WHERE user_id = ? AND status = 'received' GROUP BY source ORDER BY amount DESC LIMIT 5", [userId], (err, incomeSources) => {
+                  res.json({
+                    stats: {
+                      totalDeals: dealsCount?.total_deals || 0,
+                      totalContent: contentCount?.total_content || 0,
+                      totalIncome: incomeSum?.total_income || 0,
+                      activeDeals: activeDeals?.active_deals || 0
+                    },
+                    monthlyIncome: monthlyIncome || [],
+                    pipelineStats: pipelineStats || [],
+                    contentStatusStats: contentStatusStats || [],
+                    incomeSources: incomeSources || []
+                  });
                 });
               });
             });
