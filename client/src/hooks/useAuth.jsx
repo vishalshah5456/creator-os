@@ -3,6 +3,17 @@ import { api } from '../lib/utils.js';
 import { appUrl, supabase } from '../lib/supabase.js';
 
 const AuthContext = createContext(null);
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
+const LAST_ACTIVITY_KEY = 'creatoros:lastActivity';
+
+function markActivity() {
+  localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString());
+}
+
+function isSessionExpired() {
+  const lastActivity = Number(localStorage.getItem(LAST_ACTIVITY_KEY));
+  return lastActivity > 0 && Date.now() - lastActivity > SESSION_TIMEOUT_MS;
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -17,11 +28,27 @@ export function AuthProvider({ children }) {
 
       if (!token) {
         localStorage.removeItem('token');
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
         if (isMounted) {
           setUser(null);
           setLoading(false);
         }
         return;
+      }
+
+      if (isSessionExpired()) {
+        await supabase.auth.signOut();
+        localStorage.removeItem('token');
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        if (isMounted) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (!localStorage.getItem(LAST_ACTIVITY_KEY)) {
+        markActivity();
       }
 
       localStorage.setItem('token', token);
@@ -42,18 +69,56 @@ export function AuthProvider({ children }) {
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!session?.access_token) {
         localStorage.removeItem('token');
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        setUser(null);
+        return;
+      }
+
+      if (isSessionExpired()) {
+        await supabase.auth.signOut();
+        localStorage.removeItem('token');
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
         setUser(null);
         return;
       }
 
       localStorage.setItem('token', session.access_token);
-      const profile = await api('/auth/me');
-      setUser(profile);
+      markActivity();
+
+      try {
+        const profile = await api('/auth/me');
+        setUser(profile);
+      } catch {
+        await supabase.auth.signOut();
+        localStorage.removeItem('token');
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        setUser(null);
+      }
     });
+
+    const refreshActivity = () => {
+      if (localStorage.getItem('token')) {
+        markActivity();
+      }
+    };
+
+    const activityEvents = ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'];
+    activityEvents.forEach((event) => window.addEventListener(event, refreshActivity, { passive: true }));
+
+    const timeoutCheck = window.setInterval(async () => {
+      if (localStorage.getItem('token') && isSessionExpired()) {
+        await supabase.auth.signOut();
+        localStorage.removeItem('token');
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        setUser(null);
+      }
+    }, 30 * 1000);
 
     return () => {
       isMounted = false;
       listener.subscription.unsubscribe();
+      activityEvents.forEach((event) => window.removeEventListener(event, refreshActivity));
+      window.clearInterval(timeoutCheck);
     };
   }, []);
 
@@ -65,6 +130,7 @@ export function AuthProvider({ children }) {
 
     if (error) throw new Error(error.message);
 
+    markActivity();
     localStorage.setItem('token', data.session.access_token);
     const profile = await api('/auth/me');
     setUser(profile);
@@ -86,6 +152,7 @@ export function AuthProvider({ children }) {
       return { needsEmailConfirmation: true };
     }
 
+    markActivity();
     localStorage.setItem('token', data.session.access_token);
     const profile = await api('/auth/me');
     setUser(profile);
@@ -106,6 +173,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     await supabase.auth.signOut();
     localStorage.removeItem('token');
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
     setUser(null);
   };
 
