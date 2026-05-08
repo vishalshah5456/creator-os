@@ -10,6 +10,7 @@ import {
   PiggyBank,
   CreditCard,
   X,
+  Trash2,
   ArrowUpRight,
   ArrowDownRight
 } from 'lucide-react';
@@ -30,13 +31,15 @@ export default function Income() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [incomeToDelete, setIncomeToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadIncome();
   }, []);
 
   const loadIncome = () => {
-    api('/income')
+    return api('/income')
       .then(data => setIncome(data))
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -52,6 +55,21 @@ export default function Income() {
   const totalIncome = filteredIncome.reduce((sum, i) => sum + (i.amount || 0), 0);
   const totalReceived = filteredIncome.filter(i => i.status === 'received').reduce((sum, i) => sum + (i.amount || 0), 0);
   const totalPending = filteredIncome.filter(i => i.status === 'pending').reduce((sum, i) => sum + (i.amount || 0), 0);
+
+  const handleDeleteIncome = async () => {
+    if (!incomeToDelete) return;
+
+    setDeleting(true);
+    try {
+      await api(`/income/${incomeToDelete.id}`, { method: 'DELETE' });
+      await loadIncome();
+      setIncomeToDelete(null);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Category breakdown for pie chart - show by source (brand names)
   const sourceData = {};
@@ -251,6 +269,7 @@ export default function Income() {
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Amount</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Date</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Status</th>
+                <th className="text-right text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -279,12 +298,22 @@ export default function Income() {
                         {item.status}
                       </span>
                     </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setIncomeToDelete(item)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                        title="Delete income"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
               {filteredIncome.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
                     No income entries found
                   </td>
                 </tr>
@@ -297,6 +326,52 @@ export default function Income() {
       {/* Add Income Modal */}
       {showAddModal && (
         <IncomeModal onClose={() => setShowAddModal(false)} onSuccess={loadIncome} />
+      )}
+
+      {incomeToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900">Delete income?</h2>
+              <button onClick={() => setIncomeToDelete(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-600">
+                This will remove the income entry for <span className="font-semibold text-gray-900">{incomeToDelete.source}</span>.
+                {incomeToDelete.deal_id && ' Since it is linked to a brand deal, that deal will be deleted from Deals CRM too.'}
+              </p>
+              <div className="mt-5 rounded-lg bg-gray-50 p-4 text-sm">
+                <div className="flex justify-between gap-4">
+                  <span className="text-gray-500">Amount</span>
+                  <span className="font-medium text-gray-900">{formatCurrency(incomeToDelete.amount)}</span>
+                </div>
+                <div className="flex justify-between gap-4 mt-2">
+                  <span className="text-gray-500">Status</span>
+                  <span className="font-medium text-gray-900">{incomeToDelete.status}</span>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIncomeToDelete(null)}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteIncome}
+                  disabled={deleting}
+                  className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

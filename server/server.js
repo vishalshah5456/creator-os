@@ -335,6 +335,29 @@ app.post('/api/income', authMiddleware, (req, res) => {
   );
 });
 
+app.delete('/api/income/:id', authMiddleware, (req, res) => {
+  db.get('SELECT * FROM income WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, income) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!income) return res.status(404).json({ error: 'Income record not found' });
+
+    if (income.deal_id) {
+      return db.run('DELETE FROM income WHERE id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+
+        db.run('DELETE FROM deals WHERE id = ? AND user_id = ?', [income.deal_id, req.userId], function(err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ deleted: 1, dealDeleted: true });
+        });
+      });
+    }
+
+    db.run('DELETE FROM income WHERE id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ deleted: this.changes, dealDeleted: false });
+    });
+  });
+});
+
 // Dashboard stats
 app.get('/api/dashboard', authMiddleware, (req, res) => {
   const userId = req.userId;
