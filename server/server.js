@@ -144,7 +144,10 @@ app.post('/api/deals', authMiddleware, (req, res) => {
 });
 
 app.put('/api/deals/:id', authMiddleware, (req, res) => {
-  const { pipeline_stage, value, notes, platforms, description, contact_name, currency, start_date, end_date } = req.body;
+  const {
+    brand_name, contact_email, pipeline_stage, value, notes, platforms,
+    description, contact_name, currency, start_date, end_date
+  } = req.body;
 
   db.get('SELECT * FROM deals WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, currentDeal) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -155,11 +158,13 @@ app.put('/api/deals/:id', authMiddleware, (req, res) => {
 
     db.run(
       `UPDATE deals SET 
-        pipeline_stage = ?, value = ?, notes = ?, 
-        platforms = ?, description = ?, contact_name = ?, currency = ?, 
+        brand_name = ?, contact_email = ?, pipeline_stage = ?, value = ?, notes = ?, 
+        platforms = ?, description = ?, contact_name = ?, currency = ?,
         start_date = ?, end_date = ?, updated_at = CURRENT_TIMESTAMP 
        WHERE id = ? AND user_id = ?`,
       [
+        brand_name !== undefined ? brand_name : currentDeal.brand_name,
+        contact_email !== undefined ? contact_email : currentDeal.contact_email,
         pipeline_stage || currentDeal.pipeline_stage, 
         value !== undefined ? value : currentDeal.value, 
         notes !== undefined ? notes : currentDeal.notes,
@@ -177,7 +182,7 @@ app.put('/api/deals/:id', authMiddleware, (req, res) => {
         if (isNowPaid && !wasPaid) {
           const dealValue = value || currentDeal.value || 0;
           const dealCurrency = currency || currentDeal.currency || 'USD';
-          const brandName = currentDeal.brand_name || 'Brand Deal';
+          const brandName = brand_name || currentDeal.brand_name || 'Brand Deal';
           const incomeId = uuidv4();
 
           db.run(
