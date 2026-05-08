@@ -138,6 +138,28 @@ app.post('/api/deals', authMiddleware, (req, res) => {
      description, JSON.stringify(deliverables || []), start_date, end_date, notes, JSON.stringify(platforms || [])],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
+
+      if (pipeline_stage === 'paid') {
+        const incomeId = uuidv4();
+        const dealValue = value || 0;
+        const dealCurrency = currency || 'USD';
+        const brandName = brand_name || 'Brand Deal';
+
+        return db.run(
+          `INSERT INTO income (id, user_id, source, amount, currency, date, deal_id, description, category, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            incomeId, req.userId, brandName, dealValue, dealCurrency,
+            new Date().toISOString().split('T')[0], id,
+            'Auto: Deal paid - ' + brandName, 'brand_deal', 'received'
+          ],
+          function(incomeErr) {
+            if (incomeErr) return res.status(500).json({ error: incomeErr.message });
+            res.json({ id, ...req.body, user_id: req.userId, incomeCreated: true });
+          }
+        );
+      }
+
       res.json({ id, ...req.body, user_id: req.userId });
     }
   );
@@ -154,7 +176,8 @@ app.put('/api/deals/:id', authMiddleware, (req, res) => {
     if (!currentDeal) return res.status(404).json({ error: 'Deal not found' });
 
     const wasPaid = currentDeal.pipeline_stage === 'paid';
-    const isNowPaid = pipeline_stage === 'paid';
+    const nextStage = pipeline_stage || currentDeal.pipeline_stage;
+    const isNowPaid = nextStage === 'paid';
 
     db.run(
       `UPDATE deals SET 
@@ -165,7 +188,7 @@ app.put('/api/deals/:id', authMiddleware, (req, res) => {
       [
         brand_name !== undefined ? brand_name : currentDeal.brand_name,
         contact_email !== undefined ? contact_email : currentDeal.contact_email,
-        pipeline_stage || currentDeal.pipeline_stage, 
+        nextStage, 
         value !== undefined ? value : currentDeal.value, 
         notes !== undefined ? notes : currentDeal.notes,
         platforms ? JSON.stringify(platforms) : currentDeal.platforms,
@@ -179,41 +202,76 @@ app.put('/api/deals/:id', authMiddleware, (req, res) => {
       function(err) {
         if (err) return res.status(500).json({ error: err.message });
 
-        if (isNowPaid && !wasPaid) {
-          const dealValue = value || currentDeal.value || 0;
+        if (isNowPaid) {
+          const dealValue = value !== undefined ? value : currentDeal.value || 0;
           const dealCurrency = currency || currentDeal.currency || 'USD';
           const brandName = brand_name || currentDeal.brand_name || 'Brand Deal';
-          const incomeId = uuidv4();
 
-          db.run(
-            `INSERT INTO income (id, user_id, source, amount, currency, date, deal_id, description, category, status) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              incomeId, req.userId, brandName, dealValue, dealCurrency,
-              new Date().toISOString().split('T')[0], req.params.id,
-              'Auto: Deal paid - ' + brandName, 'brand_deal', 'received'
-            ],
-            function(err) {
-              if (err) console.log('Auto-income error:', err);
-              res.json({ 
-                updated: this.changes, 
-                incomeCreated: !err,
-                message: 'Deal updated. Income automatically logged.'
-              });
+          return db.get('SELECT id FROM income WHERE deal_id = ? AND user_id = ? LIMIT 1', [req.params.id, req.userId], (err, income) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            if (income) {
+              return db.run(
+                `UPDATE income SET source = ?, amount = ?, currency = ?, description = ?, category = ?, status = ?
+                 WHERE id = ? AND user_id = ?`,
+                [
+                  brandName, dealValue, dealCurrency,
+                  'Auto: Deal paid - ' + brandName, 'brand_deal', 'received',
+                  income.id, req.userId
+                ],
+                function(err) {
+                  if (err) return res.status(500).json({ error: err.message });
+                  res.json({
+                    updated: this.changes,
+                    incomeUpdated: true,
+                    message: 'Deal and linked income updated.'
+                  });
+                }
+              );
             }
-          );
-        } else {
-          res.json({ updated: this.changes });
+
+            const incomeId = uuidv4();
+            db.run(
+              `INSERT INTO income (id, user_id, source, amount, currency, date, deal_id, description, category, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                incomeId, req.userId, brandName, dealValue, dealCurrency,
+                new Date().toISOString().split('T')[0], req.params.id,
+                'Auto: Deal paid - ' + brandName, 'brand_deal', 'received'
+              ],
+              function(err) {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json({
+                  updated: this.changes,
+                  incomeCreated: true,
+                  message: 'Deal updated. Income automatically logged.'
+                });
+              }
+            );
+          });
         }
+
+        if (wasPaid && !isNowPaid) {
+          return db.run('DELETE FROM income WHERE deal_id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ updated: this.changes, incomeDeleted: true });
+          });
+        }
+
+        res.json({ updated: this.changes });
       }
     );
   });
 });
 
 app.delete('/api/deals/:id', authMiddleware, (req, res) => {
-  db.run('DELETE FROM deals WHERE id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
+  db.run('DELETE FROM income WHERE deal_id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ deleted: this.changes });
+
+    db.run('DELETE FROM deals WHERE id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ deleted: this.changes });
+    });
   });
 });
 
@@ -247,11 +305,19 @@ app.post('/api/content', authMiddleware, (req, res) => {
 
 // Income routes
 app.get('/api/income', authMiddleware, (req, res) => {
-  db.all('SELECT * FROM income WHERE user_id = ? ORDER BY date DESC', 
-    [req.userId], 
-    (err, income) => {
+  db.run(
+    'DELETE FROM income WHERE user_id = ? AND deal_id IS NOT NULL AND deal_id NOT IN (SELECT id FROM deals WHERE user_id = ?)',
+    [req.userId, req.userId],
+    (err) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json(income || []);
+
+      db.all('SELECT * FROM income WHERE user_id = ? ORDER BY date DESC',
+        [req.userId],
+        (err, income) => {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json(income || []);
+        }
+      );
     }
   );
 });
