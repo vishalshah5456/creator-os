@@ -26,7 +26,7 @@ export default function Login() {
       } else {
         const result = await register(email, password, name, handle);
         if (result?.needsEmailConfirmation) {
-          setError('Check your email to confirm your account, then sign in.');
+          setError('Check your email to confirm your account, then sign in. If it does not arrive, check spam or continue with Google.');
           return;
         }
       }

@@ -16,6 +16,19 @@ app.use(cors());
 app.use(express.json());
 
 // Auth routes
+app.get('/api/auth/email-exists', (req, res) => {
+  const email = String(req.query.email || '').trim().toLowerCase();
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  db.get('SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1', [email], (err, user) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ exists: Boolean(user) });
+  });
+});
+
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, name, handle } = req.body;
 

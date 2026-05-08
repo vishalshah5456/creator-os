@@ -138,8 +138,15 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (email, password, name, handle) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailCheck = await api(`/auth/email-exists?email=${encodeURIComponent(normalizedEmail)}`);
+
+    if (emailCheck.exists) {
+      throw new Error('An account already exists with this email. Please sign in with Google or use the sign in form.');
+    }
+
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: normalizedEmail,
       password,
       options: {
         data: { name, handle },
