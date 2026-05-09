@@ -5,7 +5,6 @@ import { appUrl, supabase } from '../lib/supabase.js';
 const AuthContext = createContext(null);
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
 const LAST_ACTIVITY_KEY = 'creatoros:lastActivity';
-const PASSWORD_PROMPT_DISMISSED_KEY = 'creatoros:passwordPromptDismissed';
 
 function markActivity() {
   localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString());
@@ -186,7 +185,6 @@ export function AuthProvider({ children }) {
     if (error) throw new Error(error.message);
 
     await api('/auth/password-set', { method: 'POST' });
-    sessionStorage.removeItem(PASSWORD_PROMPT_DISMISSED_KEY);
     setUser(currentUser => currentUser ? { ...currentUser, has_password: true } : currentUser);
   };
 
@@ -205,7 +203,6 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut();
     localStorage.removeItem('token');
     localStorage.removeItem(LAST_ACTIVITY_KEY);
-    sessionStorage.removeItem(PASSWORD_PROMPT_DISMISSED_KEY);
     setUser(null);
   };
 
@@ -219,13 +216,10 @@ export function AuthProvider({ children }) {
 
 function PasswordSetupPrompt() {
   const { setPassword } = useAuth();
-  const [dismissed, setDismissed] = useState(sessionStorage.getItem(PASSWORD_PROMPT_DISMISSED_KEY) === 'true');
   const [password, setPasswordValue] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  if (dismissed) return null;
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -251,14 +245,9 @@ function PasswordSetupPrompt() {
     }
   };
 
-  const dismissPrompt = () => {
-    sessionStorage.setItem(PASSWORD_PROMPT_DISMISSED_KEY, 'true');
-    setDismissed(true);
-  };
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
-      <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-950/45 backdrop-blur-sm password-overlay-enter">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-xl password-modal-enter">
         <div className="p-6 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">Set a password</h2>
           <p className="text-sm text-gray-500 mt-1">
@@ -295,16 +284,9 @@ function PasswordSetupPrompt() {
           </div>
           <div className="flex gap-3 pt-2">
             <button
-              type="button"
-              onClick={dismissPrompt}
-              className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
-            >
-              Later
-            </button>
-            <button
               type="submit"
               disabled={saving}
-              className="flex-1 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg disabled:opacity-50"
+              className="w-full px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save password'}
             </button>
