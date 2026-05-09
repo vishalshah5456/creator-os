@@ -29,6 +29,13 @@ app.get('/api/auth/email-exists', (req, res) => {
   });
 });
 
+app.post('/api/auth/password-set', authMiddleware, (req, res) => {
+  db.run('UPDATE users SET has_password = TRUE WHERE id = ?', [req.userId], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ updated: this.changes });
+  });
+});
+
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, name, handle } = req.body;
 
@@ -92,22 +99,22 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
   const avatar = metadata.avatar_url || metadata.picture || null;
 
   db.run(
-    `INSERT INTO users (id, auth_id, email, name, handle, avatar)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO users (id, auth_id, email, name, handle, avatar, has_password)
+     VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT has_password FROM users WHERE id = ?), FALSE))
      ON CONFLICT (id) DO UPDATE SET
        auth_id = COALESCE(users.auth_id, EXCLUDED.auth_id),
        email = EXCLUDED.email,
        name = COALESCE(users.name, EXCLUDED.name),
        handle = COALESCE(users.handle, EXCLUDED.handle),
        avatar = COALESCE(users.avatar, EXCLUDED.avatar)`,
-    [req.userId, authUser.id, email, name, handle, avatar],
+    [req.userId, authUser.id, email, name, handle, avatar, req.userId],
     (err, user) => {
       if (err) {
         return res.status(500).json({ error: err.message });
       }
 
       db.get(
-        'SELECT id, email, name, handle, avatar, bio, niche, followers, platforms FROM users WHERE id = ?',
+        'SELECT id, email, name, handle, avatar, bio, niche, followers, platforms, has_password FROM users WHERE id = ?',
         [req.userId],
         (err, user) => {
           if (err || !user) {

@@ -57,6 +57,7 @@ async function initializeDatabase() {
     auth_id TEXT UNIQUE,
     email TEXT UNIQUE NOT NULL,
     password TEXT,
+    has_password BOOLEAN DEFAULT FALSE,
     name TEXT,
     handle TEXT,
     avatar TEXT,
@@ -68,6 +69,7 @@ async function initializeDatabase() {
   )`);
 
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_id TEXT UNIQUE');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS has_password BOOLEAN DEFAULT FALSE');
   await pool.query('ALTER TABLE users ALTER COLUMN password DROP NOT NULL');
 
   await pool.query(`CREATE TABLE IF NOT EXISTS deals (
