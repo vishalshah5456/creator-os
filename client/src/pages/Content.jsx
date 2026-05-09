@@ -36,6 +36,8 @@ export default function Content() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPlatform, setFilterPlatform] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [dateFilterType, setDateFilterType] = useState('all');
+  const [dateFilterValue, setDateFilterValue] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingContent, setEditingContent] = useState(null);
   const [contentToDelete, setContentToDelete] = useState(null);
@@ -58,7 +60,8 @@ export default function Content() {
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesPlatform = filterPlatform === 'all' || item.platform === filterPlatform;
     const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
-    return matchesSearch && matchesPlatform && matchesStatus;
+    const matchesDate = matchesDateFilter(item.scheduled_date || item.published_date || item.created_at, dateFilterType, dateFilterValue);
+    return matchesSearch && matchesPlatform && matchesStatus && matchesDate;
   });
 
   const getPlatformInfo = (platformId) => PLATFORMS.find(p => p.id === platformId) || PLATFORMS[0];
@@ -184,6 +187,23 @@ export default function Content() {
             <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
           ))}
         </select>
+        <select
+          value={dateFilterType}
+          onChange={(e) => { setDateFilterType(e.target.value); setDateFilterValue(''); }}
+          className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+        >
+          <option value="all">All Dates</option>
+          <option value="month">By Month</option>
+          <option value="date">By Date</option>
+        </select>
+        {dateFilterType !== 'all' && (
+          <input
+            type={dateFilterType === 'month' ? 'month' : 'date'}
+            value={dateFilterValue}
+            onChange={(e) => setDateFilterValue(e.target.value)}
+            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+          />
+        )}
       </div>
 
       {/* Content List View */}
@@ -395,6 +415,16 @@ export default function Content() {
       )}
     </div>
   );
+}
+
+function matchesDateFilter(dateValue, filterType, filterValue) {
+  if (filterType === 'all' || !filterValue) return true;
+  if (!dateValue) return false;
+
+  const normalizedDate = String(dateValue).split('T')[0];
+  return filterType === 'month'
+    ? normalizedDate.startsWith(filterValue)
+    : normalizedDate === filterValue;
 }
 
 function StatusStepper({ status, onChange }) {

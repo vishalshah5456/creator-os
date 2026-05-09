@@ -400,6 +400,59 @@ app.post('/api/income', authMiddleware, (req, res) => {
   );
 });
 
+app.put('/api/income/:id', authMiddleware, (req, res) => {
+  const { source, amount, currency, date, description, category, status } = req.body;
+
+  db.get('SELECT * FROM income WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, currentIncome) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!currentIncome) return res.status(404).json({ error: 'Income record not found' });
+
+    const nextStatus = status || currentIncome.status;
+
+    db.run(
+      `UPDATE income SET
+        source = ?, amount = ?, currency = ?, date = ?,
+        description = ?, category = ?, status = ?
+       WHERE id = ? AND user_id = ?`,
+      [
+        source !== undefined ? source : currentIncome.source,
+        amount !== undefined ? amount : currentIncome.amount,
+        currency || currentIncome.currency,
+        date !== undefined ? date : currentIncome.date,
+        description !== undefined ? description : currentIncome.description,
+        category || currentIncome.category,
+        nextStatus,
+        req.params.id,
+        req.userId
+      ],
+      function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+
+        if (currentIncome.deal_id) {
+          return db.run(
+            `UPDATE deals SET brand_name = ?, value = ?, currency = ?, pipeline_stage = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ? AND user_id = ?`,
+            [
+              source !== undefined ? source : currentIncome.source,
+              amount !== undefined ? amount : currentIncome.amount,
+              currency || currentIncome.currency,
+              nextStatus === 'pending' ? 'delivered' : 'paid',
+              currentIncome.deal_id,
+              req.userId
+            ],
+            function(dealErr) {
+              if (dealErr) return res.status(500).json({ error: dealErr.message });
+              res.json({ updated: this.changes, dealUpdated: true });
+            }
+          );
+        }
+
+        res.json({ updated: this.changes, dealUpdated: false });
+      }
+    );
+  });
+});
+
 app.delete('/api/income/:id', authMiddleware, (req, res) => {
   db.get('SELECT * FROM income WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, income) => {
     if (err) return res.status(500).json({ error: err.message });

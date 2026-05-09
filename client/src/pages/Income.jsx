@@ -10,6 +10,7 @@ import {
   PiggyBank,
   CreditCard,
   X,
+  Pencil,
   Trash2,
   ArrowUpRight,
   ArrowDownRight
@@ -30,7 +31,10 @@ export default function Income() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [dateFilterType, setDateFilterType] = useState('all');
+  const [dateFilterValue, setDateFilterValue] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingIncome, setEditingIncome] = useState(null);
   const [incomeToDelete, setIncomeToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -49,7 +53,8 @@ export default function Income() {
     const matchesSearch = item.source.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          item.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = filterCategory === 'all' || item.category === filterCategory;
-    return matchesSearch && matchesCategory;
+    const matchesDate = matchesDateFilter(item.date, dateFilterType, dateFilterValue);
+    return matchesSearch && matchesCategory && matchesDate;
   });
 
   const totalIncome = filteredIncome.reduce((sum, i) => sum + (i.amount || 0), 0);
@@ -257,6 +262,23 @@ export default function Income() {
             <option key={c.id} value={c.id}>{c.label}</option>
           ))}
         </select>
+        <select
+          value={dateFilterType}
+          onChange={(e) => { setDateFilterType(e.target.value); setDateFilterValue(''); }}
+          className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+        >
+          <option value="all">All Dates</option>
+          <option value="month">By Month</option>
+          <option value="date">By Date</option>
+        </select>
+        {dateFilterType !== 'all' && (
+          <input
+            type={dateFilterType === 'month' ? 'month' : 'date'}
+            value={dateFilterValue}
+            onChange={(e) => setDateFilterValue(e.target.value)}
+            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+          />
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -299,14 +321,24 @@ export default function Income() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setIncomeToDelete(item)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                        title="Delete income"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setEditingIncome(item)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                          title="Edit income"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIncomeToDelete(item)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                          title="Delete income"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -326,6 +358,14 @@ export default function Income() {
       {/* Add Income Modal */}
       {showAddModal && (
         <IncomeModal onClose={() => setShowAddModal(false)} onSuccess={loadIncome} />
+      )}
+
+      {editingIncome && (
+        <IncomeModal
+          incomeItem={editingIncome}
+          onClose={() => setEditingIncome(null)}
+          onSuccess={loadIncome}
+        />
       )}
 
       {incomeToDelete && (
@@ -377,15 +417,25 @@ export default function Income() {
   );
 }
 
-function IncomeModal({ onClose, onSuccess }) {
+function matchesDateFilter(dateValue, filterType, filterValue) {
+  if (filterType === 'all' || !filterValue) return true;
+  if (!dateValue) return false;
+
+  const normalizedDate = String(dateValue).split('T')[0];
+  return filterType === 'month'
+    ? normalizedDate.startsWith(filterValue)
+    : normalizedDate === filterValue;
+}
+
+function IncomeModal({ incomeItem, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
-    source: '',
-    amount: '',
-    currency: 'USD',
-    date: new Date().toISOString().split('T')[0],
-    category: 'brand_deal',
-    status: 'received',
-    description: ''
+    source: incomeItem?.source || '',
+    amount: incomeItem?.amount || '',
+    currency: incomeItem?.currency || 'USD',
+    date: incomeItem?.date || new Date().toISOString().split('T')[0],
+    category: incomeItem?.category || 'brand_deal',
+    status: incomeItem?.status || 'received',
+    description: incomeItem?.description || ''
   });
   const [saving, setSaving] = useState(false);
 
@@ -393,8 +443,8 @@ function IncomeModal({ onClose, onSuccess }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api('/income', {
-        method: 'POST',
+      await api(incomeItem ? `/income/${incomeItem.id}` : '/income', {
+        method: incomeItem ? 'PUT' : 'POST',
         body: JSON.stringify({ ...formData, amount: Number(formData.amount) })
       });
       onSuccess();
@@ -410,7 +460,7 @@ function IncomeModal({ onClose, onSuccess }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <h2 className="text-lg font-semibold text-gray-900">Log Income</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{incomeItem ? 'Edit Income' : 'Log Income'}</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -525,7 +575,7 @@ function IncomeModal({ onClose, onSuccess }) {
               disabled={saving}
               className="flex-1 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Log Income'}
+              {saving ? 'Saving...' : incomeItem ? 'Update Income' : 'Log Income'}
             </button>
           </div>
         </form>

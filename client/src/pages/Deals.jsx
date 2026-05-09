@@ -39,6 +39,8 @@ export default function Deals() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStage, setFilterStage] = useState('all');
+  const [dateFilterType, setDateFilterType] = useState('all');
+  const [dateFilterValue, setDateFilterValue] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDeal, setEditingDeal] = useState(null);
 
@@ -55,7 +57,8 @@ export default function Deals() {
     const matchesSearch = deal.brand_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          deal.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStage = filterStage === 'all' || deal.pipeline_stage === filterStage;
-    return matchesSearch && matchesStage;
+    const matchesDate = matchesDateFilter(deal.end_date || deal.start_date || deal.created_at, dateFilterType, dateFilterValue);
+    return matchesSearch && matchesStage && matchesDate;
   });
 
   return (
@@ -79,6 +82,26 @@ export default function Deals() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full pl-12 pr-4 py-3.5 bg-gray-100 border-0 rounded-2xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition-all" 
         />
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <select
+          value={dateFilterType}
+          onChange={(e) => { setDateFilterType(e.target.value); setDateFilterValue(''); }}
+          className="px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+        >
+          <option value="all">All Dates</option>
+          <option value="month">By Month</option>
+          <option value="date">By Date</option>
+        </select>
+        {dateFilterType !== 'all' && (
+          <input
+            type={dateFilterType === 'month' ? 'month' : 'date'}
+            value={dateFilterValue}
+            onChange={(e) => setDateFilterValue(e.target.value)}
+            className="px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+          />
+        )}
       </div>
 
       {/* Stage Filter Boxes - 6 in a row */}
@@ -190,6 +213,16 @@ export default function Deals() {
       )}
     </div>
   );
+}
+
+function matchesDateFilter(dateValue, filterType, filterValue) {
+  if (filterType === 'all' || !filterValue) return true;
+  if (!dateValue) return false;
+
+  const normalizedDate = String(dateValue).split('T')[0];
+  return filterType === 'month'
+    ? normalizedDate.startsWith(filterValue)
+    : normalizedDate === filterValue;
 }
 
 function DealModal({ deal, onClose, onSuccess }) {
