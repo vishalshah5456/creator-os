@@ -50,6 +50,10 @@ export async function api(endpoint, options = {}) {
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Request failed' }));
+    if (res.status === 401) {
+      localStorage.removeItem('token');
+      window.dispatchEvent(new CustomEvent('creatoros:auth-expired'));
+    }
     throw new Error(error.error || `HTTP ${res.status}`);
   }
 

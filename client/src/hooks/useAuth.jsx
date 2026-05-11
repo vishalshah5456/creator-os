@@ -114,10 +114,20 @@ export function AuthProvider({ children }) {
       }
     }, 30 * 1000);
 
+    const expireSession = async () => {
+      await supabase.auth.signOut();
+      localStorage.removeItem('token');
+      localStorage.removeItem(LAST_ACTIVITY_KEY);
+      setUser(null);
+    };
+
+    window.addEventListener('creatoros:auth-expired', expireSession);
+
     return () => {
       isMounted = false;
       listener.subscription.unsubscribe();
       activityEvents.forEach((event) => window.removeEventListener(event, refreshActivity));
+      window.removeEventListener('creatoros:auth-expired', expireSession);
       window.clearInterval(timeoutCheck);
     };
   }, []);
@@ -130,13 +140,7 @@ export function AuthProvider({ children }) {
     });
 
     if (error) {
-      const emailCheck = await api(`/auth/email-exists?email=${encodeURIComponent(normalizedEmail)}`).catch(() => null);
-
-      if (emailCheck?.exists) {
-        throw new Error('This email is already registered. If you used Google before, continue with Google. If you created a password account, check your password.');
-      }
-
-      throw new Error(error.message);
+      throw new Error('Could not sign in. Check your email/password, or continue with Google if you used Google before.');
     }
 
     markActivity();
@@ -150,12 +154,6 @@ export function AuthProvider({ children }) {
 
   const register = async (email, password, name, handle) => {
     const normalizedEmail = email.trim().toLowerCase();
-    const emailCheck = await api(`/auth/email-exists?email=${encodeURIComponent(normalizedEmail)}`);
-
-    if (emailCheck.exists) {
-      throw new Error('An account already exists with this email. Please sign in with Google or use the sign in form.');
-    }
-
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
@@ -165,7 +163,9 @@ export function AuthProvider({ children }) {
       },
     });
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      throw new Error(error.message.includes('already') ? 'An account already exists with this email. Please sign in instead.' : error.message);
+    }
     if (!data.session) {
       return { needsEmailConfirmation: true };
     }

@@ -6,7 +6,7 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' },
 });
 
 function toPostgresQuery(sql) {
@@ -71,6 +71,12 @@ async function initializeDatabase() {
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_id TEXT UNIQUE');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS has_password BOOLEAN DEFAULT FALSE');
   await pool.query('ALTER TABLE users ALTER COLUMN password DROP NOT NULL');
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS auth_sessions (
+    auth_id TEXT PRIMARY KEY,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
 
   await pool.query(`CREATE TABLE IF NOT EXISTS deals (
     id TEXT PRIMARY KEY,
@@ -140,6 +146,24 @@ async function initializeDatabase() {
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
   )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS audit_events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    action TEXT NOT NULL,
+    entity TEXT NOT NULL,
+    entity_id TEXT,
+    metadata TEXT DEFAULT '{}',
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_deals_user_id ON deals(user_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_content_user_id ON content(user_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_income_user_id ON income(user_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_income_deal_id ON income(deal_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_audit_events_user_id ON audit_events(user_id)');
 
   console.log('Postgres database initialized successfully');
 }
