@@ -1,7 +1,11 @@
 const { createClient } = require('@supabase/supabase-js');
 const db = require('../database/db');
 
-const supabase = createClient(process.env.SUPABASE_URL || '', process.env.SUPABASE_ANON_KEY || '');
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+  throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY are required.');
+}
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 1000);
 
 function getUserProfileId(authUser) {
@@ -54,7 +58,8 @@ function verifyIdleSession(authId, tokenIssuedAt) {
 }
 
 module.exports = async (req, res, next) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
 
   if (!token) {
     return res.status(401).json({ error: 'Access denied. No token provided.' });

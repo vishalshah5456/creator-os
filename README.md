@@ -1,24 +1,17 @@
-# CreatorOS - Creator Economy Micro-SaaS
+# CreatorOS / CreatorCRM
 
-A full-stack SaaS application for content creators to manage their business operations.
+CreatorOS is a full-stack SaaS app for creators to manage brand deals, content, income, and rate cards.
 
-## Features
+## Current Stack
 
-- **Dashboard** - Overview with income trends, deal pipeline, and quick actions
-- **Deals CRM** - Kanban-style pipeline management for brand partnerships
-- **Content Calendar** - List and calendar views for content planning across platforms
-- **Income Tracker** - Revenue tracking with category breakdown and analytics
-- **Rate Card Builder** - Create and share professional media kits
+- Frontend: React, Vite, Tailwind CSS, Recharts
+- Backend: Node.js, Express
+- Database: Supabase Postgres through `pg`
+- Auth: Supabase Auth with email/password and Google OAuth
 
-## Tech Stack
+## Local Development
 
-- **Frontend:** React 19, Tailwind CSS, Vite, Recharts
-- **Backend:** Node.js, Express, SQLite
-- **Auth:** JWT-based authentication
-
-## Getting Started
-
-### 1. Start the Server
+### Backend
 
 ```bash
 cd server
@@ -26,9 +19,25 @@ npm install
 npm start
 ```
 
-Server runs on `http://localhost:3001`
+Required backend environment variables:
 
-### 2. Start the Client
+```text
+DATABASE_URL=postgresql://...
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-publishable-or-anon-key
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,https://creatorcrm.online,https://www.creatorcrm.online,https://app.creatorcrm.online
+SESSION_TIMEOUT_MS=900000
+```
+
+Optional:
+
+```text
+DB_SSL_REJECT_UNAUTHORIZED=false
+```
+
+Use the optional SSL override only for local troubleshooting. Production should verify database TLS certificates.
+
+### Frontend
 
 ```bash
 cd client
@@ -36,78 +45,50 @@ npm install
 npm run dev
 ```
 
-Client runs on `http://localhost:3000`
+Required frontend environment variables:
 
-### 3. Default Login
-
-Register a new account at `/login` to get started.
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/auth/register | Register new user |
-| POST | /api/auth/login | Login |
-| GET | /api/auth/me | Get current user |
-| GET | /api/dashboard | Dashboard stats |
-| GET | /api/deals | List deals |
-| POST | /api/deals | Create deal |
-| PUT | /api/deals/:id | Update deal |
-| DELETE | /api/deals/:id | Delete deal |
-| GET | /api/content | List content |
-| POST | /api/content | Create content |
-| GET | /api/income | List income |
-| POST | /api/income | Log income |
-| GET | /api/rate-cards | List rate cards |
-| POST | /api/rate-cards | Create rate card |
-
-## Project Structure
-
-```
-creator-os/
-├── server/
-│   ├── server.js          # Main Express app
-│   ├── middleware/
-│   │   └── auth.js        # JWT auth middleware
-│   ├── database/
-│   │   └── db.js          # SQLite setup
-│   └── .env
-└── client/
-    ├── src/
-    │   ├── pages/
-    │   │   ├── Dashboard.jsx
-    │   │   ├── Deals.jsx
-    │   │   ├── Content.jsx
-    │   │   ├── Income.jsx
-    │   │   ├── RateCard.jsx
-    │   │   └── Login.jsx
-    │   ├── components/
-    │   │   └── Layout.jsx
-    │   ├── hooks/
-    │   │   └── useAuth.js
-    │   ├── lib/
-    │   │   └── utils.js
-    │   ├── App.jsx
-    │   ├── main.jsx
-    │   └── index.css
-    ├── index.html
-    ├── vite.config.js
-    ├── tailwind.config.js
-    └── package.json
+```text
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-publishable-or-anon-key
+VITE_APP_URL=https://creatorcrm.online
+VITE_API_URL=https://your-backend.onrender.com/api
 ```
 
-## Deployment
+Only `VITE_` variables are exposed to the browser. Never put service-role keys, database URLs, or backend secrets in frontend env vars.
 
-### Backend
-- Deploy to Railway, Render, or Heroku
-- Switch SQLite to PostgreSQL for production
-- Set `JWT_SECRET` environment variable
+## Security Notes
 
-### Frontend
-- Build: `npm run build`
-- Deploy to Vercel, Netlify, or Cloudflare Pages
-- Update API base URL in `src/lib/utils.js`
+- Authentication is handled by Supabase Auth.
+- The backend verifies Supabase access tokens before serving user data.
+- API queries are parameterized.
+- API writes perform server-side validation.
+- CORS should be restricted with `ALLOWED_ORIGINS` in production.
+- The frontend includes security headers in `client/public/_headers`.
+- `.env`, database files, build output, and `node_modules` must stay untracked.
 
-## License
+## Deployment Checklist
 
-MIT
+- Set all required Render environment variables.
+- Enable Supabase email verification.
+- Configure Supabase redirect URLs:
+  - `https://creatorcrm.online/**`
+  - `https://www.creatorcrm.online/**`
+  - `https://app.creatorcrm.online/**`
+  - your Render frontend URL if still used
+- Keep Supabase service-role keys out of the frontend.
+- Enable daily database backups.
+- Put Cloudflare or equivalent WAF/rate limiting in front of public traffic before running ads.
+- Re-run:
+
+```bash
+npm audit --omit=dev
+npm run build
+```
+
+## Main Features
+
+- Dashboard
+- Deals CRM
+- Content calendar
+- Income tracker
+- Rate card builder

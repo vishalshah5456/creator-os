@@ -225,8 +225,8 @@ function PasswordSetupPrompt() {
     event.preventDefault();
     setError('');
 
-    if (password.length < 8) {
-      setError('Use at least 8 characters.');
+    if (password.length < 12) {
+      setError('Use at least 12 characters.');
       return;
     }
 
@@ -267,7 +267,7 @@ function PasswordSetupPrompt() {
               value={password}
               onChange={(event) => setPasswordValue(event.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
-              minLength={8}
+              minLength={12}
               required
             />
           </div>
@@ -278,7 +278,7 @@ function PasswordSetupPrompt() {
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
-              minLength={8}
+              minLength={12}
               required
             />
           </div>

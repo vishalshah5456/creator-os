@@ -70,7 +70,7 @@ async function initializeDatabase() {
 
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_id TEXT UNIQUE');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS has_password BOOLEAN DEFAULT FALSE');
-  await pool.query('ALTER TABLE users ALTER COLUMN password DROP NOT NULL');
+  await pool.query('ALTER TABLE users DROP COLUMN IF EXISTS password');
 
   await pool.query(`CREATE TABLE IF NOT EXISTS auth_sessions (
     auth_id TEXT PRIMARY KEY,

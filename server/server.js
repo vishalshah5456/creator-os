@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 require('dotenv').config();
 
 const db = require('./database/db');
@@ -11,14 +11,23 @@ const authMiddleware = require('./middleware/auth');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS ||
-  'https://creatorcrm.online,https://www.creatorcrm.online,https://app.creatorcrm.online,https://creator-os-frontend.onrender.com,http://localhost:3000,http://localhost:5173')
-  .split(',')
-  .map(origin => origin.trim())
-  .filter(Boolean);
+const productionOrigins = [
+  'https://creatorcrm.online',
+  'https://www.creatorcrm.online',
+  'https://app.creatorcrm.online',
+  'https://creator-os-frontend.onrender.com',
+];
+const developmentOrigins = ['http://localhost:3000', 'http://localhost:5173'];
+const allowedOrigins = (process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
+  : process.env.NODE_ENV === 'production'
+    ? productionOrigins
+    : [...productionOrigins, ...developmentOrigins]);
 
+app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(helmet({
+  contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 app.use(cors({
@@ -80,7 +89,9 @@ function cleanCurrency(value) {
 function cleanDate(value) {
   if (!value) return null;
   const date = cleanString(value, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date ? null : date;
 }
 
 function requireValid(condition, message, errors) {
@@ -91,12 +102,31 @@ function sendValidation(res, errors) {
   return res.status(400).json({ error: errors.join(' ') });
 }
 
+function parseJson(value, fallback) {
+  try {
+    return JSON.parse(value || JSON.stringify(fallback));
+  } catch {
+    return fallback;
+  }
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+function validateIdParam(req, res, next) {
+  if (!isUuid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid resource id' });
+  }
+  next();
+}
+
 function auditEvent(req, action, entity, entityId, metadata = {}) {
   db.run(
     `INSERT INTO audit_events (id, user_id, action, entity, entity_id, metadata, ip_address, user_agent)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      uuidv4(),
+      randomUUID(),
       req.userId || null,
       action,
       entity,
@@ -135,7 +165,7 @@ function getUser(req, res) {
         [req.userId],
         (userErr, user) => {
           if (userErr || !user) return res.status(404).json({ error: 'User not found' });
-          user.platforms = JSON.parse(user.platforms || '[]');
+          user.platforms = parseJson(user.platforms, []);
           res.json(user);
         }
       );
@@ -158,8 +188,8 @@ app.get('/api/deals', authMiddleware, (req, res) => {
     if (err) return res.status(500).json({ error: 'Unable to load deals' });
     deals = deals || [];
     deals.forEach(d => {
-      d.deliverables = JSON.parse(d.deliverables || '[]');
-      d.platforms = JSON.parse(d.platforms || '[]');
+      d.deliverables = parseJson(d.deliverables, []);
+      d.platforms = parseJson(d.platforms, []);
     });
     res.json(deals);
   });
@@ -184,7 +214,7 @@ app.post('/api/deals', authMiddleware, (req, res) => {
   requireValid(DEAL_STAGES.has(pipelineStage), 'Pipeline stage is invalid.', errors);
   if (errors.length) return sendValidation(res, errors);
 
-  const id = uuidv4();
+  const id = randomUUID();
   const payload = [
     id,
     req.userId,
@@ -214,7 +244,7 @@ app.post('/api/deals', authMiddleware, (req, res) => {
       auditEvent(req, 'create', 'deal', id, { brandName, pipelineStage });
 
       if (pipelineStage === 'paid') {
-        const incomeId = uuidv4();
+        const incomeId = randomUUID();
         return db.run(
           `INSERT INTO income (id, user_id, source, amount, currency, date, deal_id, description, category, status)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -232,7 +262,7 @@ app.post('/api/deals', authMiddleware, (req, res) => {
   );
 });
 
-app.put('/api/deals/:id', authMiddleware, (req, res) => {
+app.put('/api/deals/:id', authMiddleware, validateIdParam, (req, res) => {
   db.get('SELECT * FROM deals WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, currentDeal) => {
     if (err) return res.status(500).json({ error: 'Unable to load deal' });
     if (!currentDeal) return res.status(404).json({ error: 'Deal not found' });
@@ -245,7 +275,7 @@ app.put('/api/deals/:id', authMiddleware, (req, res) => {
     const nextStage = req.body.pipeline_stage !== undefined ? cleanString(req.body.pipeline_stage, 30) : currentDeal.pipeline_stage;
     const platforms = req.body.platforms !== undefined && Array.isArray(req.body.platforms)
       ? req.body.platforms.filter(p => PLATFORMS.has(p))
-      : JSON.parse(currentDeal.platforms || '[]');
+      : parseJson(currentDeal.platforms, []);
 
     requireValid(Boolean(brandName), 'Brand name is required.', errors);
     requireValid(!contactEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail), 'Contact email is invalid.', errors);
@@ -299,7 +329,7 @@ app.put('/api/deals/:id', authMiddleware, (req, res) => {
               );
             }
 
-            const incomeId = uuidv4();
+            const incomeId = randomUUID();
             db.run(
               `INSERT INTO income (id, user_id, source, amount, currency, date, deal_id, description, category, status)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -327,7 +357,7 @@ app.put('/api/deals/:id', authMiddleware, (req, res) => {
   });
 });
 
-app.delete('/api/deals/:id', authMiddleware, (req, res) => {
+app.delete('/api/deals/:id', authMiddleware, validateIdParam, (req, res) => {
   db.run('DELETE FROM income WHERE deal_id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
     if (err) return res.status(500).json({ error: 'Unable to delete linked income' });
 
@@ -344,7 +374,7 @@ app.get('/api/content', authMiddleware, (req, res) => {
     if (err) return res.status(500).json({ error: 'Unable to load content' });
     content = content || [];
     content.forEach(c => {
-      c.performance_metrics = JSON.parse(c.performance_metrics || '{}');
+      c.performance_metrics = parseJson(c.performance_metrics, {});
     });
     res.json(content);
   });
@@ -363,7 +393,7 @@ app.post('/api/content', authMiddleware, (req, res) => {
   requireValid(CONTENT_STATUSES.has(status), 'Content status is invalid.', errors);
   if (errors.length) return sendValidation(res, errors);
 
-  const id = uuidv4();
+  const id = randomUUID();
   db.run(
     'INSERT INTO content (id, user_id, title, platform, content_type, status, scheduled_date, deal_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [id, req.userId, title, platform, contentType, status, cleanDate(req.body.scheduled_date), cleanOptionalString(req.body.deal_id, 80)],
@@ -375,7 +405,7 @@ app.post('/api/content', authMiddleware, (req, res) => {
   );
 });
 
-app.put('/api/content/:id', authMiddleware, (req, res) => {
+app.put('/api/content/:id', authMiddleware, validateIdParam, (req, res) => {
   db.get('SELECT * FROM content WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, currentContent) => {
     if (err) return res.status(500).json({ error: 'Unable to load content' });
     if (!currentContent) return res.status(404).json({ error: 'Content not found' });
@@ -422,7 +452,7 @@ app.put('/api/content/:id', authMiddleware, (req, res) => {
   });
 });
 
-app.delete('/api/content/:id', authMiddleware, (req, res) => {
+app.delete('/api/content/:id', authMiddleware, validateIdParam, (req, res) => {
   db.run('DELETE FROM content WHERE id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
     if (err) return res.status(500).json({ error: 'Unable to delete content' });
     auditEvent(req, 'delete', 'content', req.params.id);
@@ -454,7 +484,7 @@ app.post('/api/income', authMiddleware, (req, res) => {
   requireValid(INCOME_STATUSES.has(status), 'Income status is invalid.', errors);
   if (errors.length) return sendValidation(res, errors);
 
-  const id = uuidv4();
+  const id = randomUUID();
   db.run(
     'INSERT INTO income (id, user_id, source, amount, currency, date, deal_id, description, category, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [id, req.userId, source, amount, currency, date, cleanOptionalString(req.body.deal_id, 80), cleanOptionalString(req.body.description, 2000), category, status],
@@ -466,7 +496,7 @@ app.post('/api/income', authMiddleware, (req, res) => {
   );
 });
 
-app.put('/api/income/:id', authMiddleware, (req, res) => {
+app.put('/api/income/:id', authMiddleware, validateIdParam, (req, res) => {
   db.get('SELECT * FROM income WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, currentIncome) => {
     if (err) return res.status(500).json({ error: 'Unable to load income record' });
     if (!currentIncome) return res.status(404).json({ error: 'Income record not found' });
@@ -526,7 +556,7 @@ app.put('/api/income/:id', authMiddleware, (req, res) => {
   });
 });
 
-app.delete('/api/income/:id', authMiddleware, (req, res) => {
+app.delete('/api/income/:id', authMiddleware, validateIdParam, (req, res) => {
   db.get('SELECT * FROM income WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, income) => {
     if (err) return res.status(500).json({ error: 'Unable to load income record' });
     if (!income) return res.status(404).json({ error: 'Income record not found' });
@@ -598,10 +628,10 @@ app.get('/api/rate-cards', authMiddleware, (req, res) => {
     if (err) return res.status(500).json({ error: 'Unable to load rate cards' });
     cards = cards || [];
     cards.forEach(c => {
-      c.platforms = JSON.parse(c.platforms || '[]');
-      c.services = JSON.parse(c.services || '[]');
-      c.pricing_tiers = JSON.parse(c.pricing_tiers || '[]');
-      c.demographics = JSON.parse(c.demographics || '{}');
+      c.platforms = parseJson(c.platforms, []);
+      c.services = parseJson(c.services, []);
+      c.pricing_tiers = parseJson(c.pricing_tiers, []);
+      c.demographics = parseJson(c.demographics, {});
     });
     res.json(cards);
   });
@@ -614,17 +644,23 @@ app.post('/api/rate-cards', authMiddleware, (req, res) => {
   const engagementRate = cleanNumber(req.body.engagement_rate, 0);
   const platforms = Array.isArray(req.body.platforms) ? req.body.platforms.filter(p => PLATFORMS.has(p)) : [];
   const services = Array.isArray(req.body.services) ? req.body.services.map(s => cleanString(s, 120)).filter(Boolean).slice(0, 50) : [];
-  const pricingTiers = Array.isArray(req.body.pricing_tiers) ? req.body.pricing_tiers.slice(0, 50) : [];
+  const pricingTiers = Array.isArray(req.body.pricing_tiers)
+    ? req.body.pricing_tiers.slice(0, 50).map(tier => ({
+        service: cleanString(tier?.service, 120) || 'Service',
+        price: cleanNumber(tier?.price, 0) || 0,
+        description: cleanOptionalString(tier?.description, 500),
+      }))
+    : [];
 
   requireValid(Boolean(name), 'Rate card name is required.', errors);
   requireValid(audienceSize !== null, 'Audience size must be a positive number.', errors);
   requireValid(engagementRate !== null, 'Engagement rate must be a positive number.', errors);
   if (errors.length) return sendValidation(res, errors);
 
-  const id = uuidv4();
+  const id = randomUUID();
   db.run(
     'INSERT INTO rate_cards (id, user_id, name, platforms, services, audience_size, engagement_rate, demographics, pricing_tiers, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, req.userId, name, JSON.stringify(platforms), JSON.stringify(services), audienceSize, engagementRate, JSON.stringify(req.body.demographics || {}), JSON.stringify(pricingTiers), req.body.is_default ? 1 : 0],
+    [id, req.userId, name, JSON.stringify(platforms), JSON.stringify(services), audienceSize, engagementRate, JSON.stringify({}), JSON.stringify(pricingTiers), req.body.is_default ? 1 : 0],
     function(err) {
       if (err) return res.status(500).json({ error: 'Unable to create rate card' });
       auditEvent(req, 'create', 'rate_card', id);
