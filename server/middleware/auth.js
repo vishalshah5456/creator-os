@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const db = require('../database/db');
+const { randomUUID } = require('crypto');
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
   throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY are required.');
@@ -7,6 +8,24 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 1000);
+
+function auditAuthFailure(req, reason, authId = null) {
+  db.run(
+    `INSERT INTO audit_events (id, user_id, action, entity, entity_id, metadata, ip_address, user_agent)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      randomUUID(),
+      null,
+      'auth_failure',
+      'auth',
+      authId,
+      JSON.stringify({ reason }),
+      req.ip,
+      req.get('user-agent') || null,
+    ],
+    () => {}
+  );
+}
 
 function getUserProfileId(authUser) {
   return new Promise((resolve, reject) => {
@@ -62,6 +81,7 @@ module.exports = async (req, res, next) => {
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
 
   if (!token) {
+    auditAuthFailure(req, 'missing_bearer_token');
     return res.status(401).json({ error: 'Access denied. No token provided.' });
   }
 
@@ -69,12 +89,14 @@ module.exports = async (req, res, next) => {
     const { data, error } = await supabase.auth.getUser(token);
 
     if (error || !data.user) {
+      auditAuthFailure(req, 'invalid_token');
       return res.status(401).json({ error: 'Invalid token' });
     }
 
     const tokenPayload = decodeJwtPayload(token);
     const sessionAllowed = await verifyIdleSession(data.user.id, tokenPayload.iat);
     if (!sessionAllowed) {
+      auditAuthFailure(req, 'idle_session_expired', data.user.id);
       return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
 
@@ -82,6 +104,7 @@ module.exports = async (req, res, next) => {
     req.userId = await getUserProfileId(data.user);
     next();
   } catch (err) {
+    auditAuthFailure(req, 'auth_middleware_error');
     res.status(401).json({ error: 'Invalid token' });
   }
 };

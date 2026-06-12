@@ -27,7 +27,14 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'none'"],
+      baseUri: ["'none'"],
+      formAction: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 app.use(cors({
@@ -35,6 +42,10 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error('Origin is not allowed by CORS'));
   },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400,
 }));
 app.use(express.json({ limit: '100kb' }));
 
@@ -62,6 +73,10 @@ const CONTENT_TYPES = new Set(['post', 'story', 'reel', 'video', 'carousel', 'bl
 const PLATFORMS = new Set(['instagram', 'youtube', 'tiktok', 'twitter', 'facebook', 'linkedin', 'blog', 'other']);
 const INCOME_STATUSES = new Set(['received', 'pending']);
 const INCOME_CATEGORIES = new Set(['brand_deal', 'affiliate', 'ad_revenue', 'product', 'consulting', 'other']);
+const MAX_PLATFORMS = 10;
+const MAX_DELIVERABLES = 25;
+const MAX_SERVICES = 50;
+const MAX_PRICING_TIERS = 50;
 
 function cleanString(value, max = 500) {
   if (value === undefined || value === null) return undefined;
@@ -203,8 +218,8 @@ app.post('/api/deals', authMiddleware, (req, res) => {
   const currency = cleanCurrency(req.body.currency);
   const status = cleanString(req.body.status || 'lead', 30);
   const pipelineStage = cleanString(req.body.pipeline_stage || 'outreach', 30);
-  const platforms = Array.isArray(req.body.platforms) ? req.body.platforms.filter(p => PLATFORMS.has(p)) : [];
-  const deliverables = Array.isArray(req.body.deliverables) ? req.body.deliverables.map(d => cleanString(d, 120)).filter(Boolean).slice(0, 25) : [];
+  const platforms = Array.isArray(req.body.platforms) ? req.body.platforms.filter(p => PLATFORMS.has(p)).slice(0, MAX_PLATFORMS) : [];
+  const deliverables = Array.isArray(req.body.deliverables) ? req.body.deliverables.map(d => cleanString(d, 120)).filter(Boolean).slice(0, MAX_DELIVERABLES) : [];
 
   requireValid(Boolean(brandName), 'Brand name is required.', errors);
   requireValid(!contactEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail), 'Contact email is invalid.', errors);
@@ -276,6 +291,7 @@ app.put('/api/deals/:id', authMiddleware, validateIdParam, (req, res) => {
     const platforms = req.body.platforms !== undefined && Array.isArray(req.body.platforms)
       ? req.body.platforms.filter(p => PLATFORMS.has(p))
       : parseJson(currentDeal.platforms, []);
+    const cappedPlatforms = Array.isArray(platforms) ? platforms.slice(0, MAX_PLATFORMS) : [];
 
     requireValid(Boolean(brandName), 'Brand name is required.', errors);
     requireValid(!contactEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail), 'Contact email is invalid.', errors);
@@ -299,7 +315,7 @@ app.put('/api/deals/:id', authMiddleware, validateIdParam, (req, res) => {
         nextStage,
         value,
         req.body.notes !== undefined ? cleanOptionalString(req.body.notes, 4000) : currentDeal.notes,
-        JSON.stringify(platforms),
+        JSON.stringify(cappedPlatforms),
         req.body.description !== undefined ? cleanOptionalString(req.body.description, 2000) : currentDeal.description,
         req.body.contact_name !== undefined ? cleanOptionalString(req.body.contact_name, 120) : currentDeal.contact_name,
         currency,
@@ -642,10 +658,10 @@ app.post('/api/rate-cards', authMiddleware, (req, res) => {
   const name = cleanString(req.body.name, 120);
   const audienceSize = cleanNumber(req.body.audience_size, 0);
   const engagementRate = cleanNumber(req.body.engagement_rate, 0);
-  const platforms = Array.isArray(req.body.platforms) ? req.body.platforms.filter(p => PLATFORMS.has(p)) : [];
-  const services = Array.isArray(req.body.services) ? req.body.services.map(s => cleanString(s, 120)).filter(Boolean).slice(0, 50) : [];
+  const platforms = Array.isArray(req.body.platforms) ? req.body.platforms.filter(p => PLATFORMS.has(p)).slice(0, MAX_PLATFORMS) : [];
+  const services = Array.isArray(req.body.services) ? req.body.services.map(s => cleanString(s, 120)).filter(Boolean).slice(0, MAX_SERVICES) : [];
   const pricingTiers = Array.isArray(req.body.pricing_tiers)
-    ? req.body.pricing_tiers.slice(0, 50).map(tier => ({
+    ? req.body.pricing_tiers.slice(0, MAX_PRICING_TIERS).map(tier => ({
         service: cleanString(tier?.service, 120) || 'Service',
         price: cleanNumber(tier?.price, 0) || 0,
         description: cleanOptionalString(tier?.description, 500),

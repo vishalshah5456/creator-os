@@ -1,4 +1,6 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+types.setTypeParser(1700, value => Number(value));
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is required. Add your Supabase Postgres URL in Render environment variables.');
@@ -85,7 +87,7 @@ async function initializeDatabase() {
     brand_logo TEXT,
     contact_name TEXT,
     contact_email TEXT,
-    value REAL DEFAULT 0,
+    value NUMERIC(12,2) DEFAULT 0,
     currency TEXT DEFAULT 'USD',
     status TEXT DEFAULT 'lead',
     pipeline_stage TEXT DEFAULT 'outreach',
@@ -120,7 +122,7 @@ async function initializeDatabase() {
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     source TEXT NOT NULL,
-    amount REAL NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
     currency TEXT DEFAULT 'USD',
     date TEXT NOT NULL,
     deal_id TEXT,
@@ -140,7 +142,7 @@ async function initializeDatabase() {
     platforms TEXT DEFAULT '[]',
     services TEXT DEFAULT '[]',
     audience_size INTEGER,
-    engagement_rate REAL,
+    engagement_rate NUMERIC(5,2),
     demographics TEXT DEFAULT '{}',
     pricing_tiers TEXT DEFAULT '[]',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -158,6 +160,10 @@ async function initializeDatabase() {
     user_agent TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
   )`);
+
+  await pool.query('ALTER TABLE deals ALTER COLUMN value TYPE NUMERIC(12,2) USING ROUND(value::numeric, 2)');
+  await pool.query('ALTER TABLE income ALTER COLUMN amount TYPE NUMERIC(12,2) USING ROUND(amount::numeric, 2)');
+  await pool.query('ALTER TABLE rate_cards ALTER COLUMN engagement_rate TYPE NUMERIC(5,2) USING ROUND(engagement_rate::numeric, 2)');
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_deals_user_id ON deals(user_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_content_user_id ON content(user_id)');
