@@ -36,9 +36,19 @@ export function formatNumber(num) {
 
 export const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
+export function getStoredToken() {
+  return sessionStorage.getItem('token') || localStorage.getItem('token');
+}
+
+export function clearStoredAuth() {
+  sessionStorage.removeItem('token');
+  localStorage.removeItem('token');
+  localStorage.removeItem('creatoros:lastActivity');
+  localStorage.removeItem('creatoros:sessionStartedAt');
+}
 
 export async function api(endpoint, options = {}) {
-  const token = localStorage.getItem('token');
+  const token = getStoredToken();
   const res = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers: {
@@ -51,7 +61,7 @@ export async function api(endpoint, options = {}) {
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Request failed' }));
     if (res.status === 401) {
-      localStorage.removeItem('token');
+      clearStoredAuth();
       window.dispatchEvent(new CustomEvent('creatoros:auth-expired'));
     }
     throw new Error(error.error || `HTTP ${res.status}`);

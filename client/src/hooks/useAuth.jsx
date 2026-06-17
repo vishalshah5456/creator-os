@@ -1,18 +1,66 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { api } from '../lib/utils.js';
-import { appUrl, supabase } from '../lib/supabase.js';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { api, clearStoredAuth, getStoredToken } from '../lib/utils.js';
+import { appUrl, REMEMBER_ME_KEY, supabase } from '../lib/supabase.js';
 
 const AuthContext = createContext(null);
-const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
+const SESSION_TIMEOUT_MS = Number(import.meta.env.VITE_SESSION_TIMEOUT_MS || 30 * 60 * 1000);
+const STANDARD_SESSION_MS = Number(import.meta.env.VITE_SESSION_MAX_AGE_MS || 24 * 60 * 60 * 1000);
+const REMEMBER_SESSION_MS = Number(import.meta.env.VITE_REMEMBER_ME_MAX_AGE_MS || 30 * 24 * 60 * 60 * 1000);
 const LAST_ACTIVITY_KEY = 'creatoros:lastActivity';
+const SESSION_STARTED_KEY = 'creatoros:sessionStartedAt';
+const SESSION_MESSAGE_KEY = 'creatoros:sessionMessage';
+
+function isRemembered() {
+  return localStorage.getItem(REMEMBER_ME_KEY) === 'true';
+}
+
+function activeTokenStorage() {
+  return isRemembered() ? localStorage : sessionStorage;
+}
+
+function storeToken(token) {
+  activeTokenStorage().setItem('token', token);
+  const inactiveStorage = activeTokenStorage() === localStorage ? sessionStorage : localStorage;
+  inactiveStorage.removeItem('token');
+}
 
 function markActivity() {
   localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString());
 }
 
-function isSessionExpired() {
+function markSessionStarted() {
+  if (!localStorage.getItem(SESSION_STARTED_KEY)) {
+    localStorage.setItem(SESSION_STARTED_KEY, Date.now().toString());
+  }
+}
+
+function getSessionExpiryReason() {
   const lastActivity = Number(localStorage.getItem(LAST_ACTIVITY_KEY));
-  return lastActivity > 0 && Date.now() - lastActivity > SESSION_TIMEOUT_MS;
+  const startedAt = Number(localStorage.getItem(SESSION_STARTED_KEY));
+  const maxAge = isRemembered() ? REMEMBER_SESSION_MS : STANDARD_SESSION_MS;
+
+  if (lastActivity > 0 && Date.now() - lastActivity > SESSION_TIMEOUT_MS) {
+    return 'Your session expired after 30 minutes of inactivity. Please sign in again.';
+  }
+
+  if (startedAt > 0 && Date.now() - startedAt > maxAge) {
+    return isRemembered()
+      ? 'Your remembered session expired after 30 days. Please sign in again.'
+      : 'Your session expired. Please sign in again.';
+  }
+
+  return '';
+}
+
+function clearSessionCache(message = '') {
+  clearStoredAuth();
+  if (message) localStorage.setItem(SESSION_MESSAGE_KEY, message);
+}
+
+async function expireSession(message, setUser) {
+  await supabase.auth.signOut();
+  clearSessionCache(message);
+  setUser(null);
 }
 
 export function AuthProvider({ children }) {
@@ -27,8 +75,7 @@ export function AuthProvider({ children }) {
       const token = data.session?.access_token;
 
       if (!token) {
-        localStorage.removeItem('token');
-        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        clearSessionCache();
         if (isMounted) {
           setUser(null);
           setLoading(false);
@@ -36,28 +83,22 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      if (isSessionExpired()) {
-        await supabase.auth.signOut();
-        localStorage.removeItem('token');
-        localStorage.removeItem(LAST_ACTIVITY_KEY);
-        if (isMounted) {
-          setUser(null);
-          setLoading(false);
-        }
+      const expiryReason = getSessionExpiryReason();
+      if (expiryReason) {
+        await expireSession(expiryReason, setUser);
+        if (isMounted) setLoading(false);
         return;
       }
 
-      if (!localStorage.getItem(LAST_ACTIVITY_KEY)) {
-        markActivity();
-      }
-
-      localStorage.setItem('token', token);
+      markSessionStarted();
+      markActivity();
+      storeToken(token);
 
       try {
         const profile = await api('/auth/me');
         if (isMounted) setUser(profile);
       } catch {
-        localStorage.removeItem('token');
+        clearSessionCache('Your session could not be verified. Please sign in again.');
         if (isMounted) setUser(null);
       } finally {
         if (isMounted) setLoading(false);
@@ -68,72 +109,62 @@ export function AuthProvider({ children }) {
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!session?.access_token) {
-        localStorage.removeItem('token');
-        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        clearSessionCache();
         setUser(null);
         return;
       }
 
-      if (isSessionExpired()) {
-        await supabase.auth.signOut();
-        localStorage.removeItem('token');
-        localStorage.removeItem(LAST_ACTIVITY_KEY);
-        setUser(null);
+      const expiryReason = getSessionExpiryReason();
+      if (expiryReason) {
+        await expireSession(expiryReason, setUser);
         return;
       }
 
-      localStorage.setItem('token', session.access_token);
+      markSessionStarted();
       markActivity();
+      storeToken(session.access_token);
 
       try {
         const profile = await api('/auth/me');
         setUser(profile);
       } catch {
-        await supabase.auth.signOut();
-        localStorage.removeItem('token');
-        localStorage.removeItem(LAST_ACTIVITY_KEY);
-        setUser(null);
+        await expireSession('Your session could not be verified. Please sign in again.', setUser);
       }
     });
 
     const refreshActivity = () => {
-      if (localStorage.getItem('token')) {
-        markActivity();
-      }
+      if (getStoredToken()) markActivity();
     };
 
     const activityEvents = ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'];
     activityEvents.forEach((event) => window.addEventListener(event, refreshActivity, { passive: true }));
 
     const timeoutCheck = window.setInterval(async () => {
-      if (localStorage.getItem('token') && isSessionExpired()) {
-        await supabase.auth.signOut();
-        localStorage.removeItem('token');
-        localStorage.removeItem(LAST_ACTIVITY_KEY);
-        setUser(null);
+      const expiryReason = getStoredToken() ? getSessionExpiryReason() : '';
+      if (expiryReason) {
+        await expireSession(expiryReason, setUser);
       }
     }, 30 * 1000);
 
-    const expireSession = async () => {
-      await supabase.auth.signOut();
-      localStorage.removeItem('token');
-      localStorage.removeItem(LAST_ACTIVITY_KEY);
-      setUser(null);
+    const handleAuthExpired = async () => {
+      await expireSession('Your session expired. Please sign in again.', setUser);
     };
 
-    window.addEventListener('creatoros:auth-expired', expireSession);
+    window.addEventListener('creatoros:auth-expired', handleAuthExpired);
 
     return () => {
       isMounted = false;
       listener.subscription.unsubscribe();
       activityEvents.forEach((event) => window.removeEventListener(event, refreshActivity));
-      window.removeEventListener('creatoros:auth-expired', expireSession);
+      window.removeEventListener('creatoros:auth-expired', handleAuthExpired);
       window.clearInterval(timeoutCheck);
     };
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email, password, rememberMe = false) => {
     const normalizedEmail = email.trim().toLowerCase();
+    localStorage.setItem(REMEMBER_ME_KEY, rememberMe ? 'true' : 'false');
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email: normalizedEmail,
       password,
@@ -143,8 +174,9 @@ export function AuthProvider({ children }) {
       throw new Error('Could not sign in. Check your email/password, or continue with Google if you used Google before.');
     }
 
+    localStorage.setItem(SESSION_STARTED_KEY, Date.now().toString());
     markActivity();
-    localStorage.setItem('token', data.session.access_token);
+    storeToken(data.session.access_token);
     const profile = await api('/auth/me');
     const passwordState = await api('/auth/password-set', { method: 'POST' }).catch(() => null);
     const updatedProfile = passwordState ? { ...profile, has_password: true } : profile;
@@ -152,8 +184,10 @@ export function AuthProvider({ children }) {
     return updatedProfile;
   };
 
-  const register = async (email, password, name, handle) => {
+  const register = async (email, password, name, handle, rememberMe = false) => {
     const normalizedEmail = email.trim().toLowerCase();
+    localStorage.setItem(REMEMBER_ME_KEY, rememberMe ? 'true' : 'false');
+
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
@@ -170,8 +204,9 @@ export function AuthProvider({ children }) {
       return { needsEmailConfirmation: true };
     }
 
+    localStorage.setItem(SESSION_STARTED_KEY, Date.now().toString());
     markActivity();
-    localStorage.setItem('token', data.session.access_token);
+    storeToken(data.session.access_token);
     const profile = await api('/auth/me');
     const passwordState = await api('/auth/password-set', { method: 'POST' }).catch(() => null);
     const updatedProfile = passwordState ? { ...profile, has_password: true } : profile;
@@ -188,7 +223,9 @@ export function AuthProvider({ children }) {
     setUser(currentUser => currentUser ? { ...currentUser, has_password: true } : currentUser);
   };
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (rememberMe = false) => {
+    localStorage.setItem(REMEMBER_ME_KEY, rememberMe ? 'true' : 'false');
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -201,8 +238,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     await supabase.auth.signOut();
-    localStorage.removeItem('token');
-    localStorage.removeItem(LAST_ACTIVITY_KEY);
+    clearSessionCache();
     setUser(null);
   };
 
@@ -295,6 +331,12 @@ function PasswordSetupPrompt() {
       </div>
     </div>
   );
+}
+
+export function consumeSessionMessage() {
+  const message = localStorage.getItem(SESSION_MESSAGE_KEY);
+  localStorage.removeItem(SESSION_MESSAGE_KEY);
+  return message;
 }
 
 export function useAuth() {

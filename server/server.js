@@ -198,6 +198,24 @@ app.post('/api/auth/password-set', authMiddleware, (req, res) => {
 
 app.get('/api/auth/me', authMiddleware, getUser);
 
+app.post('/api/audit/export', authMiddleware, (req, res) => {
+  const reportName = cleanString(req.body.report_name || 'report', 120);
+  const scope = cleanString(req.body.scope || 'filtered', 30);
+  const rowCount = cleanNumber(req.body.row_count, 0);
+  const filters = req.body.filters && typeof req.body.filters === 'object' && !Array.isArray(req.body.filters)
+    ? req.body.filters
+    : {};
+
+  auditEvent(req, 'export', 'report', reportName, {
+    report_name: reportName,
+    scope,
+    row_count: rowCount,
+    filters,
+  });
+
+  res.json({ logged: true });
+});
+
 app.get('/api/deals', authMiddleware, (req, res) => {
   db.all('SELECT * FROM deals WHERE user_id = ? ORDER BY created_at DESC', [req.userId], (err, deals) => {
     if (err) return res.status(500).json({ error: 'Unable to load deals' });

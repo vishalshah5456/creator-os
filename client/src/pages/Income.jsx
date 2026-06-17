@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, formatCurrency, formatDate } from '../lib/utils';
+import ExportMenu from '../components/ExportMenu';
 import {
   Plus,
   Search,
@@ -33,10 +34,12 @@ export default function Income() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [dateFilterType, setDateFilterType] = useState('all');
   const [dateFilterValue, setDateFilterValue] = useState('');
+  const [dateFilterEndValue, setDateFilterEndValue] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingIncome, setEditingIncome] = useState(null);
   const [incomeToDelete, setIncomeToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [selectedIncomeIds, setSelectedIncomeIds] = useState([]);
 
   useEffect(() => {
     loadIncome();
@@ -53,9 +56,33 @@ export default function Income() {
     const matchesSearch = item.source.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          item.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = filterCategory === 'all' || item.category === filterCategory;
-    const matchesDate = matchesDateFilter(item.date, dateFilterType, dateFilterValue);
+    const matchesDate = matchesDateFilter(item.date, dateFilterType, dateFilterValue, dateFilterEndValue);
     return matchesSearch && matchesCategory && matchesDate;
   });
+  const selectedIncome = filteredIncome.filter(item => selectedIncomeIds.includes(item.id));
+  const incomeExportColumns = [
+    { header: 'Source', key: 'source' },
+    { header: 'Category', key: 'category' },
+    { header: 'Amount', key: 'amount', type: 'currency' },
+    { header: 'Currency', key: 'currency' },
+    { header: 'Date', key: 'date', type: 'date' },
+    { header: 'Status', key: 'status' },
+    { header: 'Description', key: 'description' },
+  ];
+
+  const toggleIncomeSelection = (id) => {
+    setSelectedIncomeIds(current => current.includes(id)
+      ? current.filter(itemId => itemId !== id)
+      : [...current, id]);
+  };
+
+  const toggleAllVisibleIncome = () => {
+    const visibleIds = filteredIncome.map(item => item.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIncomeIds.includes(id));
+    setSelectedIncomeIds(allVisibleSelected
+      ? selectedIncomeIds.filter(id => !visibleIds.includes(id))
+      : Array.from(new Set([...selectedIncomeIds, ...visibleIds])));
+  };
 
   const totalIncome = filteredIncome.reduce((sum, i) => sum + (i.amount || 0), 0);
   const totalReceived = filteredIncome.filter(i => i.status === 'received').reduce((sum, i) => sum + (i.amount || 0), 0);
@@ -119,13 +146,23 @@ export default function Income() {
           <h1 className="text-2xl font-bold text-gray-900">Income Tracker</h1>
           <p className="text-gray-500 mt-1">Track and analyze your revenue</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Log Income
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportMenu
+            reportName="income-report"
+            columns={incomeExportColumns}
+            filteredRows={filteredIncome}
+            fullRows={income}
+            selectedRows={selectedIncome}
+            filters={{ searchQuery, filterCategory, dateFilterType, dateFilterValue, dateFilterEndValue }}
+          />
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Log Income
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -264,20 +301,39 @@ export default function Income() {
         </select>
         <select
           value={dateFilterType}
-          onChange={(e) => { setDateFilterType(e.target.value); setDateFilterValue(''); }}
+          onChange={(e) => { setDateFilterType(e.target.value); setDateFilterValue(''); setDateFilterEndValue(''); }}
           className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
         >
           <option value="all">All Dates</option>
+          <option value="today">Today</option>
+          <option value="last7">Last 7 Days</option>
+          <option value="last30">Last 30 Days</option>
           <option value="month">By Month</option>
-          <option value="date">By Date</option>
+          <option value="range">Custom Range</option>
         </select>
-        {dateFilterType !== 'all' && (
+        {dateFilterType === 'month' && (
           <input
-            type={dateFilterType === 'month' ? 'month' : 'date'}
+            type="month"
             value={dateFilterValue}
             onChange={(e) => setDateFilterValue(e.target.value)}
             className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
           />
+        )}
+        {dateFilterType === 'range' && (
+          <>
+            <input
+              type="date"
+              value={dateFilterValue}
+              onChange={(e) => setDateFilterValue(e.target.value)}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            />
+            <input
+              type="date"
+              value={dateFilterEndValue}
+              onChange={(e) => setDateFilterEndValue(e.target.value)}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            />
+          </>
         )}
       </div>
 
@@ -286,6 +342,15 @@ export default function Income() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100">
+                <th className="px-6 py-3">
+                  <input
+                    type="checkbox"
+                    checked={filteredIncome.length > 0 && filteredIncome.every(item => selectedIncomeIds.includes(item.id))}
+                    onChange={toggleAllVisibleIncome}
+                    className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                    aria-label="Select all visible income rows"
+                  />
+                </th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Source</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Category</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Amount</th>
@@ -299,6 +364,15 @@ export default function Income() {
                 const cat = INCOME_CATEGORIES.find(c => c.id === item.category) || INCOME_CATEGORIES[5];
                 return (
                   <tr key={item.id} className="hover:bg-gray-50/50">
+                    <td className="px-6 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedIncomeIds.includes(item.id)}
+                        onChange={() => toggleIncomeSelection(item.id)}
+                        className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                        aria-label={`Select ${item.source}`}
+                      />
+                    </td>
                     <td className="px-6 py-4">
                       <p className="text-sm font-medium text-gray-900">{item.source}</p>
                       {item.description && <p className="text-xs text-gray-400">{item.description}</p>}
@@ -345,7 +419,7 @@ export default function Income() {
               })}
               {filteredIncome.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
                     No income entries found
                   </td>
                 </tr>
@@ -417,14 +491,28 @@ export default function Income() {
   );
 }
 
-function matchesDateFilter(dateValue, filterType, filterValue) {
-  if (filterType === 'all' || !filterValue) return true;
+function matchesDateFilter(dateValue, filterType, filterValue, endValue) {
+  if (filterType === 'all') return true;
   if (!dateValue) return false;
 
   const normalizedDate = String(dateValue).split('T')[0];
-  return filterType === 'month'
-    ? normalizedDate.startsWith(filterValue)
-    : normalizedDate === filterValue;
+  const today = new Date().toISOString().split('T')[0];
+  const daysAgo = (days) => {
+    const date = new Date();
+    date.setDate(date.getDate() - days);
+    return date.toISOString().split('T')[0];
+  };
+
+  if (filterType === 'today') return normalizedDate === today;
+  if (filterType === 'last7') return normalizedDate >= daysAgo(6) && normalizedDate <= today;
+  if (filterType === 'last30') return normalizedDate >= daysAgo(29) && normalizedDate <= today;
+  if (filterType === 'month') return filterValue ? normalizedDate.startsWith(filterValue) : true;
+  if (filterType === 'range') {
+    const startsAfter = filterValue ? normalizedDate >= filterValue : true;
+    const endsBefore = endValue ? normalizedDate <= endValue : true;
+    return startsAfter && endsBefore;
+  }
+  return true;
 }
 
 function IncomeModal({ incomeItem, onClose, onSuccess }) {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, formatDate } from '../lib/utils';
+import ExportMenu from '../components/ExportMenu';
 import {
   Plus,
   Search,
@@ -38,12 +39,14 @@ export default function Content() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [dateFilterType, setDateFilterType] = useState('all');
   const [dateFilterValue, setDateFilterValue] = useState('');
+  const [dateFilterEndValue, setDateFilterEndValue] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingContent, setEditingContent] = useState(null);
   const [contentToDelete, setContentToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState('list');
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedContentIds, setSelectedContentIds] = useState([]);
 
   useEffect(() => {
     loadContent();
@@ -60,9 +63,33 @@ export default function Content() {
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesPlatform = filterPlatform === 'all' || item.platform === filterPlatform;
     const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
-    const matchesDate = matchesDateFilter(item.scheduled_date || item.published_date || item.created_at, dateFilterType, dateFilterValue);
+    const matchesDate = matchesDateFilter(item.scheduled_date || item.published_date || item.created_at, dateFilterType, dateFilterValue, dateFilterEndValue);
     return matchesSearch && matchesPlatform && matchesStatus && matchesDate;
   });
+  const selectedContent = filteredContent.filter(item => selectedContentIds.includes(item.id));
+  const contentExportColumns = [
+    { header: 'Title', key: 'title' },
+    { header: 'Platform', key: 'platform' },
+    { header: 'Type', key: 'content_type' },
+    { header: 'Status', key: 'status' },
+    { header: 'Scheduled Date', key: 'scheduled_date', type: 'date' },
+    { header: 'Published Date', key: 'published_date', type: 'date' },
+    { header: 'Created At', key: 'created_at', type: 'date' },
+  ];
+
+  const toggleContentSelection = (id) => {
+    setSelectedContentIds(current => current.includes(id)
+      ? current.filter(itemId => itemId !== id)
+      : [...current, id]);
+  };
+
+  const toggleAllVisibleContent = () => {
+    const visibleIds = filteredContent.map(item => item.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedContentIds.includes(id));
+    setSelectedContentIds(allVisibleSelected
+      ? selectedContentIds.filter(id => !visibleIds.includes(id))
+      : Array.from(new Set([...selectedContentIds, ...visibleIds])));
+  };
 
   const getPlatformInfo = (platformId) => PLATFORMS.find(p => p.id === platformId) || PLATFORMS[0];
 
@@ -130,7 +157,15 @@ export default function Content() {
           <h1 className="text-2xl font-bold text-gray-900">Content Calendar</h1>
           <p className="text-gray-500 mt-1">Plan and track your content</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <ExportMenu
+            reportName="content-report"
+            columns={contentExportColumns}
+            filteredRows={filteredContent}
+            fullRows={content}
+            selectedRows={selectedContent}
+            filters={{ searchQuery, filterPlatform, filterStatus, dateFilterType, dateFilterValue, dateFilterEndValue, viewMode }}
+          />
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode('list')}
@@ -189,20 +224,39 @@ export default function Content() {
         </select>
         <select
           value={dateFilterType}
-          onChange={(e) => { setDateFilterType(e.target.value); setDateFilterValue(''); }}
+          onChange={(e) => { setDateFilterType(e.target.value); setDateFilterValue(''); setDateFilterEndValue(''); }}
           className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
         >
           <option value="all">All Dates</option>
+          <option value="today">Today</option>
+          <option value="last7">Last 7 Days</option>
+          <option value="last30">Last 30 Days</option>
           <option value="month">By Month</option>
-          <option value="date">By Date</option>
+          <option value="range">Custom Range</option>
         </select>
-        {dateFilterType !== 'all' && (
+        {dateFilterType === 'month' && (
           <input
-            type={dateFilterType === 'month' ? 'month' : 'date'}
+            type="month"
             value={dateFilterValue}
             onChange={(e) => setDateFilterValue(e.target.value)}
             className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
           />
+        )}
+        {dateFilterType === 'range' && (
+          <>
+            <input
+              type="date"
+              value={dateFilterValue}
+              onChange={(e) => setDateFilterValue(e.target.value)}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            />
+            <input
+              type="date"
+              value={dateFilterEndValue}
+              onChange={(e) => setDateFilterEndValue(e.target.value)}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            />
+          </>
         )}
       </div>
 
@@ -213,6 +267,15 @@ export default function Content() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100">
+                  <th className="px-6 py-3">
+                    <input
+                      type="checkbox"
+                      checked={filteredContent.length > 0 && filteredContent.every(item => selectedContentIds.includes(item.id))}
+                      onChange={toggleAllVisibleContent}
+                      className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                      aria-label="Select all visible content rows"
+                    />
+                  </th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Content</th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Platform</th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Type</th>
@@ -229,6 +292,15 @@ export default function Content() {
 
                   return (
                     <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedContentIds.includes(item.id)}
+                          onChange={() => toggleContentSelection(item.id)}
+                          className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                          aria-label={`Select ${item.title}`}
+                        />
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${platform.color}`}>
@@ -287,7 +359,7 @@ export default function Content() {
                 })}
                 {filteredContent.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                    <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
                       No content found
                     </td>
                   </tr>
@@ -417,14 +489,28 @@ export default function Content() {
   );
 }
 
-function matchesDateFilter(dateValue, filterType, filterValue) {
-  if (filterType === 'all' || !filterValue) return true;
+function matchesDateFilter(dateValue, filterType, filterValue, endValue) {
+  if (filterType === 'all') return true;
   if (!dateValue) return false;
 
   const normalizedDate = String(dateValue).split('T')[0];
-  return filterType === 'month'
-    ? normalizedDate.startsWith(filterValue)
-    : normalizedDate === filterValue;
+  const today = new Date().toISOString().split('T')[0];
+  const daysAgo = (days) => {
+    const date = new Date();
+    date.setDate(date.getDate() - days);
+    return date.toISOString().split('T')[0];
+  };
+
+  if (filterType === 'today') return normalizedDate === today;
+  if (filterType === 'last7') return normalizedDate >= daysAgo(6) && normalizedDate <= today;
+  if (filterType === 'last30') return normalizedDate >= daysAgo(29) && normalizedDate <= today;
+  if (filterType === 'month') return filterValue ? normalizedDate.startsWith(filterValue) : true;
+  if (filterType === 'range') {
+    const startsAfter = filterValue ? normalizedDate >= filterValue : true;
+    const endsBefore = endValue ? normalizedDate <= endValue : true;
+    return startsAfter && endsBefore;
+  }
+  return true;
 }
 
 function StatusStepper({ status, onChange }) {

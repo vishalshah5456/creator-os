@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, formatCurrency, formatDate } from '../lib/utils';
+import ExportMenu from '../components/ExportMenu';
 import {
   Plus, Search, MoreHorizontal, Calendar, X,
   Instagram, Youtube, Video, FileText, MessageCircle, Globe
@@ -41,6 +42,7 @@ export default function Deals() {
   const [filterStage, setFilterStage] = useState('all');
   const [dateFilterType, setDateFilterType] = useState('all');
   const [dateFilterValue, setDateFilterValue] = useState('');
+  const [dateFilterEndValue, setDateFilterEndValue] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDeal, setEditingDeal] = useState(null);
 
@@ -57,19 +59,41 @@ export default function Deals() {
     const matchesSearch = deal.brand_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          deal.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStage = filterStage === 'all' || deal.pipeline_stage === filterStage;
-    const matchesDate = matchesDateFilter(deal.end_date || deal.start_date || deal.created_at, dateFilterType, dateFilterValue);
+    const matchesDate = matchesDateFilter(deal.end_date || deal.start_date || deal.created_at, dateFilterType, dateFilterValue, dateFilterEndValue);
     return matchesSearch && matchesStage && matchesDate;
   });
+  const dealExportColumns = [
+    { header: 'Brand', key: 'brand_name' },
+    { header: 'Contact Name', key: 'contact_name' },
+    { header: 'Contact Email', key: 'contact_email' },
+    { header: 'Value', key: 'value', type: 'currency' },
+    { header: 'Currency', key: 'currency' },
+    { header: 'Stage', key: 'pipeline_stage' },
+    { header: 'Platforms', value: row => (row.platforms || []).join(', ') },
+    { header: 'Start Date', key: 'start_date', type: 'date' },
+    { header: 'End Date', key: 'end_date', type: 'date' },
+    { header: 'Description', key: 'description' },
+    { header: 'Notes', key: 'notes' },
+  ];
 
   return (
     <div className="space-y-5 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Deals</h1>
-        <button onClick={() => setShowAddModal(true)}
-          className="w-10 h-10 bg-brand-600 hover:bg-brand-700 text-white rounded-full flex items-center justify-center transition-colors shadow-lg">
-          <Plus className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            reportName="deals-report"
+            columns={dealExportColumns}
+            filteredRows={filteredDeals}
+            fullRows={deals}
+            filters={{ searchQuery, filterStage, dateFilterType, dateFilterValue, dateFilterEndValue }}
+          />
+          <button onClick={() => setShowAddModal(true)}
+            className="w-10 h-10 bg-brand-600 hover:bg-brand-700 text-white rounded-full flex items-center justify-center transition-colors shadow-lg">
+            <Plus className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -87,20 +111,39 @@ export default function Deals() {
       <div className="flex flex-col sm:flex-row gap-3">
         <select
           value={dateFilterType}
-          onChange={(e) => { setDateFilterType(e.target.value); setDateFilterValue(''); }}
+          onChange={(e) => { setDateFilterType(e.target.value); setDateFilterValue(''); setDateFilterEndValue(''); }}
           className="px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
         >
           <option value="all">All Dates</option>
+          <option value="today">Today</option>
+          <option value="last7">Last 7 Days</option>
+          <option value="last30">Last 30 Days</option>
           <option value="month">By Month</option>
-          <option value="date">By Date</option>
+          <option value="range">Custom Range</option>
         </select>
-        {dateFilterType !== 'all' && (
+        {dateFilterType === 'month' && (
           <input
-            type={dateFilterType === 'month' ? 'month' : 'date'}
+            type="month"
             value={dateFilterValue}
             onChange={(e) => setDateFilterValue(e.target.value)}
             className="px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
           />
+        )}
+        {dateFilterType === 'range' && (
+          <>
+            <input
+              type="date"
+              value={dateFilterValue}
+              onChange={(e) => setDateFilterValue(e.target.value)}
+              className="px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            />
+            <input
+              type="date"
+              value={dateFilterEndValue}
+              onChange={(e) => setDateFilterEndValue(e.target.value)}
+              className="px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            />
+          </>
         )}
       </div>
 
@@ -215,14 +258,28 @@ export default function Deals() {
   );
 }
 
-function matchesDateFilter(dateValue, filterType, filterValue) {
-  if (filterType === 'all' || !filterValue) return true;
+function matchesDateFilter(dateValue, filterType, filterValue, endValue) {
+  if (filterType === 'all') return true;
   if (!dateValue) return false;
 
   const normalizedDate = String(dateValue).split('T')[0];
-  return filterType === 'month'
-    ? normalizedDate.startsWith(filterValue)
-    : normalizedDate === filterValue;
+  const today = new Date().toISOString().split('T')[0];
+  const daysAgo = (days) => {
+    const date = new Date();
+    date.setDate(date.getDate() - days);
+    return date.toISOString().split('T')[0];
+  };
+
+  if (filterType === 'today') return normalizedDate === today;
+  if (filterType === 'last7') return normalizedDate >= daysAgo(6) && normalizedDate <= today;
+  if (filterType === 'last30') return normalizedDate >= daysAgo(29) && normalizedDate <= today;
+  if (filterType === 'month') return filterValue ? normalizedDate.startsWith(filterValue) : true;
+  if (filterType === 'range') {
+    const startsAfter = filterValue ? normalizedDate >= filterValue : true;
+    const endsBefore = endValue ? normalizedDate <= endValue : true;
+    return startsAfter && endsBefore;
+  }
+  return true;
 }
 
 function DealModal({ deal, onClose, onSuccess }) {

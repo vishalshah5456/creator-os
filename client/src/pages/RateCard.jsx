@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, formatCurrency, formatNumber } from '../lib/utils';
+import ExportMenu from '../components/ExportMenu';
 import {
   Plus,
   Instagram,
@@ -52,6 +53,30 @@ export default function RateCard() {
   };
 
   const activeCard = rateCards.find(c => c.is_default) || rateCards[0];
+  const rateCardExportRows = rateCards.flatMap(card => (
+    (card.pricing_tiers?.length ? card.pricing_tiers : [{ service: '', price: '', description: '' }]).map(tier => ({
+      name: card.name,
+      is_default: card.is_default ? 'Yes' : 'No',
+      platforms: (card.platforms || []).join(', '),
+      audience_size: card.audience_size || 0,
+      engagement_rate: card.engagement_rate || 0,
+      service: tier.service,
+      price: tier.price || 0,
+      description: tier.description,
+      created_at: card.created_at,
+    }))
+  ));
+  const rateCardExportColumns = [
+    { header: 'Rate Card', key: 'name' },
+    { header: 'Default', key: 'is_default' },
+    { header: 'Platforms', key: 'platforms' },
+    { header: 'Audience Size', key: 'audience_size', type: 'number' },
+    { header: 'Engagement Rate', key: 'engagement_rate', type: 'number' },
+    { header: 'Service', key: 'service' },
+    { header: 'Price', key: 'price', type: 'currency' },
+    { header: 'Description', key: 'description' },
+    { header: 'Created At', key: 'created_at', type: 'date' },
+  ];
 
   const copyRateCard = () => {
     if (!activeCard) return;
@@ -68,13 +93,22 @@ export default function RateCard() {
           <h1 className="text-2xl font-bold text-gray-900">Rate Card</h1>
           <p className="text-gray-500 mt-1">Create and share your media kit</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          New Rate Card
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportMenu
+            reportName="rate-card-report"
+            columns={rateCardExportColumns}
+            filteredRows={rateCardExportRows}
+            fullRows={rateCardExportRows}
+            filters={{ page: 'rate-card' }}
+          />
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            New Rate Card
+          </button>
+        </div>
       </div>
 
       {activeCard ? (

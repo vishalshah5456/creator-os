@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth.jsx';
+import { consumeSessionMessage, useAuth } from '../hooks/useAuth.jsx';
 import { Zap, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
@@ -12,8 +12,14 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const { login, register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const message = consumeSessionMessage();
+    if (message) setError(message);
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -22,9 +28,9 @@ export default function Login() {
 
     try {
       if (isLogin) {
-        await login(email, password);
+        await login(email, password, rememberMe);
       } else {
-        const result = await register(email, password, name, handle);
+        const result = await register(email, password, name, handle, rememberMe);
         if (result?.needsEmailConfirmation) {
           setError('Check your email to confirm your account, then sign in. If it does not arrive, check spam or continue with Google.');
           return;
@@ -43,7 +49,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await loginWithGoogle();
+      await loginWithGoogle(rememberMe);
     } catch (err) {
       setError(err.message);
       setLoading(false);
@@ -83,6 +89,16 @@ export default function Login() {
           >
             Continue with Google
           </button>
+
+          <label className="mb-5 flex items-center gap-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(event) => setRememberMe(event.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            />
+            Remember me for up to 30 days
+          </label>
 
           <div className="flex items-center gap-3 mb-5">
             <div className="h-px flex-1 bg-gray-200" />

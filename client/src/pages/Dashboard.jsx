@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, formatCurrency, formatNumber } from '../lib/utils';
+import ExportMenu from '../components/ExportMenu';
 import {
   Handshake, CalendarDays, DollarSign, TrendingUp,
   ArrowUpRight, X, Info
@@ -43,6 +44,21 @@ export default function Dashboard() {
 
   const incomeSources = data?.incomeSources || [];
   const contentStatusCount = (status) => contentStatusStats.find(item => item.status === status)?.count || 0;
+  const dashboardExportRows = [
+    { report: 'Total Deals', metric: 'Count', value: stats.totalDeals || 0 },
+    { report: 'Active Deals', metric: 'Count', value: stats.activeDeals || 0 },
+    { report: 'Content Pieces', metric: 'Count', value: stats.totalContent || 0 },
+    { report: 'Total Income', metric: 'Revenue', value: stats.totalIncome || 0 },
+    ...monthlyIncome.map(item => ({ report: 'Revenue', metric: item.month, value: item.amount || 0 })),
+    ...pipelineStats.map(item => ({ report: 'Campaign Performance', metric: item.pipeline_stage, value: item.count || 0 })),
+    ...contentStatusStats.map(item => ({ report: 'Content Status', metric: item.status, value: item.count || 0 })),
+    ...incomeSources.map(item => ({ report: 'Revenue Source', metric: item.source, value: item.amount || 0 })),
+  ];
+  const dashboardExportColumns = [
+    { header: 'Report', key: 'report' },
+    { header: 'Metric', key: 'metric' },
+    { header: 'Value', key: 'value', type: 'number' },
+  ];
 
   const cardDetails = {
     totalDeals: {
@@ -89,9 +105,18 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 mt-1">Overview of your creator business</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-gray-500 mt-1">Overview of your creator business</p>
+        </div>
+        <ExportMenu
+          reportName="dashboard-report"
+          columns={dashboardExportColumns}
+          filteredRows={dashboardExportRows}
+          fullRows={dashboardExportRows}
+          filters={{ page: 'dashboard' }}
+        />
       </div>
 
       {/* Stats Grid - Clickable */}
