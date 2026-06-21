@@ -311,6 +311,10 @@ function blankRow(rowNumber) {
 function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
   const maxCampaign = Math.max(...campaignRows.map(row => row.count), 0);
   const maxContent = Math.max(...contentRows.map(row => row.count), 0);
+  const makeBar = (value, max) => {
+    const length = max > 0 ? Math.max(1, Math.round((value / max) * 28)) : 0;
+    return '█'.repeat(length);
+  };
 
   const campaignDataRows = campaignRows.map((row, index) => {
     const rowNumber = 11 + index;
@@ -318,6 +322,7 @@ function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
     return `<row r="${rowNumber}" ht="22" customHeight="1">
       ${cell(`A${rowNumber}`, row.stage, rowStyle)}
       ${cell(`B${rowNumber}`, row.count, 10, 'number')}
+      ${cell(`C${rowNumber}`, makeBar(row.count, maxCampaign), 14)}
     </row>`;
   }).join('');
 
@@ -326,18 +331,20 @@ function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
     return `<row r="${rowNumber}" ht="22" customHeight="1">
       ${cell(`A${rowNumber}`, row.status, 8)}
       ${cell(`B${rowNumber}`, row.count, 10, 'number')}
+      ${cell(`C${rowNumber}`, makeBar(row.count, maxContent), 15)}
     </row>`;
   }).join('');
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <dimension ref="A1:H50"/>
+  <dimension ref="A1:H40"/>
   <sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews>
   <sheetFormatPr defaultRowHeight="18"/>
   <cols>
     <col min="1" max="1" width="24" customWidth="1"/>
     <col min="2" max="2" width="14" customWidth="1"/>
-    <col min="3" max="8" width="13" customWidth="1"/>
+    <col min="3" max="3" width="34" customWidth="1"/>
+    <col min="4" max="8" width="13" customWidth="1"/>
   </cols>
   <sheetData>
     <row r="1" ht="30" customHeight="1">${cell('A1', 'CreatorCRM Dashboard Report', 1)}</row>
@@ -351,22 +358,16 @@ function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
     ${blankRow(8)}
 
     <row r="9" ht="24" customHeight="1">${cell('A9', 'Campaign Performance', 5)}</row>
-    <row r="10" ht="22" customHeight="1">${cell('A10', 'Campaign Stage', 6)}${cell('B10', 'Count', 6)}</row>
+    <row r="10" ht="22" customHeight="1">${cell('A10', 'Campaign Stage', 6)}${cell('B10', 'Count', 6)}${cell('C10', 'Horizontal Bar', 6)}</row>
     ${campaignDataRows}
     <row r="16" ht="18" customHeight="1">${cell('A16', `Highest campaign count: ${maxCampaign}`, 2)}</row>
     ${blankRow(17)}
 
     <row r="33" ht="24" customHeight="1">${cell('A33', 'Content Status', 7)}</row>
-    <row r="34" ht="22" customHeight="1">${cell('A34', 'Status', 9)}${cell('B34', 'Count', 9)}</row>
+    <row r="34" ht="22" customHeight="1">${cell('A34', 'Status', 9)}${cell('B34', 'Count', 9)}${cell('C34', 'Horizontal Bar', 9)}</row>
     ${contentDataRows}
     <row r="38" ht="18" customHeight="1">${cell('A38', `Highest content count: ${maxContent}`, 2)}</row>
   </sheetData>
-  <mergeCells count="3">
-    <mergeCell ref="A1:H1"/>
-    <mergeCell ref="A3:B3"/>
-    <mergeCell ref="A9:B9"/>
-  </mergeCells>
-  <drawing r:id="rId1"/>
   <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
 </worksheet>`;
 }
@@ -374,11 +375,13 @@ function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
 function buildDashboardStyles() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="4">
+  <fonts count="6">
     <font><sz val="12"/><color rgb="FF111827"/><name val="Calibri"/></font>
     <font><b/><sz val="18"/><color rgb="FF111827"/><name val="Calibri"/></font>
     <font><b/><sz val="12"/><color rgb="FF111827"/><name val="Calibri"/></font>
     <font><b/><sz val="12"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+    <font><b/><sz val="12"/><color rgb="FF16A34A"/><name val="Calibri"/></font>
+    <font><b/><sz val="12"/><color rgb="FFF97316"/><name val="Calibri"/></font>
   </fonts>
   <fills count="8">
     <fill><patternFill patternType="none"/></fill>
@@ -401,7 +404,7 @@ function buildDashboardStyles() {
     </border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="14">
+  <cellXfs count="16">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/>
@@ -416,6 +419,8 @@ function buildDashboardStyles() {
     <xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="left"/></xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="left"/></xf>
     <xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="left"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment horizontal="left"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment horizontal="left"/></xf>
   </cellXfs>
 </styleSheet>`;
 }
@@ -485,9 +490,6 @@ function buildDashboardXlsx({ stats, campaignRows, contentRows }) {
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
-  <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
-  <Override PartName="/xl/charts/chart2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
 </Types>`,
     },
     {
@@ -505,43 +507,9 @@ function buildDashboardXlsx({ stats, campaignRows, contentRows }) {
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`,
     },
-    {
-      name: 'xl/worksheets/_rels/sheet1.xml.rels',
-      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
-</Relationships>`,
-    },
-    {
-      name: 'xl/drawings/_rels/drawing1.xml.rels',
-      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart2.xml"/>
-</Relationships>`,
-    },
     { name: 'xl/workbook.xml', content: buildWorkbook(sheetName) },
     { name: 'xl/styles.xml', content: buildDashboardStyles() },
     { name: 'xl/worksheets/sheet1.xml', content: buildDashboardWorksheet({ stats, campaignRows, contentRows }) },
-    { name: 'xl/drawings/drawing1.xml', content: buildDrawingXml() },
-    {
-      name: 'xl/charts/chart1.xml',
-      content: buildBarChartXml({
-        title: 'Campaign Performance',
-        categoryRange: "'Dashboard Report'!$A$11:$A$15",
-        valueRange: "'Dashboard Report'!$B$11:$B$15",
-        color: '16A34A',
-      }),
-    },
-    {
-      name: 'xl/charts/chart2.xml',
-      content: buildBarChartXml({
-        title: 'Content Status',
-        categoryRange: "'Dashboard Report'!$A$35:$A$37",
-        valueRange: "'Dashboard Report'!$B$35:$B$37",
-        color: 'F97316',
-      }),
-    },
   ]);
 }
 
