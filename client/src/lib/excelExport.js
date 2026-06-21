@@ -221,12 +221,51 @@ function buildWorkbook(sheetName) {
 </workbook>`;
 }
 
+function buildWorkbookForSheets(sheets) {
+  const sheetNodes = sheets.map((sheet, index) => (
+    `<sheet name="${xmlEscape(sheet.name.slice(0, 31) || `Sheet ${index + 1}`)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+  )).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>${sheetNodes}</sheets>
+</workbook>`;
+}
+
+function buildWorkbookRelationshipsForSheets(sheets) {
+  const sheetRelationships = sheets.map((_, index) => (
+    `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+  )).join('');
+  const stylesId = `rId${sheets.length + 1}`;
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${sheetRelationships}
+  <Relationship Id="${stylesId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+}
+
+function buildContentTypesForSheets(sheetCount) {
+  const worksheetTypes = Array.from({ length: sheetCount }, (_, index) => (
+    `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+  )).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  ${worksheetTypes}
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`;
+}
+
 function buildStyles() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <numFmts count="2">
     <numFmt numFmtId="164" formatCode="yyyy-mm-dd"/>
-    <numFmt numFmtId="165" formatCode="$#,##0.00"/>
+    <numFmt numFmtId="165" formatCode="#,##0.00"/>
   </numFmts>
   <fonts count="4">
     <font><sz val="11"/><color rgb="FF111827"/><name val="Calibri"/></font>
@@ -313,7 +352,7 @@ function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
   const maxContent = Math.max(...contentRows.map(row => row.count), 0);
   const makeBar = (value, max) => {
     const length = max > 0 ? Math.max(1, Math.round((value / max) * 28)) : 0;
-    return '█'.repeat(length);
+    return '#'.repeat(length);
   };
 
   const campaignDataRows = campaignRows.map((row, index) => {
@@ -327,7 +366,7 @@ function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
   }).join('');
 
   const contentDataRows = contentRows.map((row, index) => {
-    const rowNumber = 35 + index;
+    const rowNumber = 21 + index;
     return `<row r="${rowNumber}" ht="22" customHeight="1">
       ${cell(`A${rowNumber}`, row.status, 8)}
       ${cell(`B${rowNumber}`, row.count, 10, 'number')}
@@ -337,7 +376,7 @@ function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <dimension ref="A1:H40"/>
+  <dimension ref="A1:H26"/>
   <sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews>
   <sheetFormatPr defaultRowHeight="18"/>
   <cols>
@@ -363,10 +402,12 @@ function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
     <row r="16" ht="18" customHeight="1">${cell('A16', `Highest campaign count: ${maxCampaign}`, 2)}</row>
     ${blankRow(17)}
 
-    <row r="33" ht="24" customHeight="1">${cell('A33', 'Content Status', 7)}</row>
-    <row r="34" ht="22" customHeight="1">${cell('A34', 'Status', 9)}${cell('B34', 'Count', 9)}${cell('C34', 'Horizontal Bar', 9)}</row>
+    ${blankRow(18)}
+
+    <row r="19" ht="24" customHeight="1">${cell('A19', 'Content Status', 7)}</row>
+    <row r="20" ht="22" customHeight="1">${cell('A20', 'Status', 9)}${cell('B20', 'Count', 9)}${cell('C20', 'Horizontal Bar', 9)}</row>
     ${contentDataRows}
-    <row r="38" ht="18" customHeight="1">${cell('A38', `Highest content count: ${maxContent}`, 2)}</row>
+    <row r="24" ht="18" customHeight="1">${cell('A24', `Highest content count: ${maxContent}`, 2)}</row>
   </sheetData>
   <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
 </worksheet>`;
@@ -478,19 +519,19 @@ function buildBarChartXml({ title, categoryRange, valueRange, color }) {
 </c:chartSpace>`;
 }
 
-function buildDashboardXlsx({ stats, campaignRows, contentRows }) {
-  const sheetName = 'Dashboard Report';
+function buildDashboardXlsx({ stats, campaignRows, contentRows, extraSheets = [] }) {
+  const sheets = [
+    { name: 'Dashboard Report', content: buildDashboardWorksheet({ stats, campaignRows, contentRows }) },
+    ...extraSheets.map(sheet => ({
+      name: sheet.name,
+      content: buildWorksheet(sheet.rows, sheet.columns, sheet.name, { scope: 'dashboard' }),
+    })),
+  ];
+
   return createZip([
     {
       name: '[Content_Types].xml',
-      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-</Types>`,
+      content: buildContentTypesForSheets(sheets.length),
     },
     {
       name: '_rels/.rels',
@@ -501,15 +542,14 @@ function buildDashboardXlsx({ stats, campaignRows, contentRows }) {
     },
     {
       name: 'xl/_rels/workbook.xml.rels',
-      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`,
+      content: buildWorkbookRelationshipsForSheets(sheets),
     },
-    { name: 'xl/workbook.xml', content: buildWorkbook(sheetName) },
+    { name: 'xl/workbook.xml', content: buildWorkbookForSheets(sheets) },
     { name: 'xl/styles.xml', content: buildDashboardStyles() },
-    { name: 'xl/worksheets/sheet1.xml', content: buildDashboardWorksheet({ stats, campaignRows, contentRows }) },
+    ...sheets.map((sheet, index) => ({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      content: sheet.content,
+    })),
   ]);
 }
 
@@ -559,6 +599,83 @@ export async function exportDashboardReport({ stats = {}, pipelineStats = [], co
     count: getContentCount(status),
   }));
 
+  const [deals, content, income, rateCards] = await Promise.all([
+    api('/deals').catch(() => []),
+    api('/content').catch(() => []),
+    api('/income').catch(() => []),
+    api('/rate-cards').catch(() => []),
+  ]);
+
+  const rateCardRows = rateCards.flatMap(card => (
+    (card.pricing_tiers?.length ? card.pricing_tiers : [{ service: '', price: '', description: '' }]).map(tier => ({
+      name: card.name,
+      is_default: card.is_default ? 'Yes' : 'No',
+      platforms: (card.platforms || []).join(', '),
+      audience_size: card.audience_size || 0,
+      engagement_rate: card.engagement_rate || 0,
+      service: tier.service,
+      price: tier.price || 0,
+      description: tier.description,
+      created_at: card.created_at,
+    }))
+  ));
+
+  const extraSheets = [
+    {
+      name: 'Deals',
+      rows: deals,
+      columns: [
+        { header: 'Brand', key: 'brand_name' },
+        { header: 'Contact Name', key: 'contact_name' },
+        { header: 'Contact Email', key: 'contact_email' },
+        { header: 'Value', key: 'value', type: 'number' },
+        { header: 'Currency', key: 'currency' },
+        { header: 'Stage', key: 'pipeline_stage' },
+        { header: 'Platforms', value: row => (row.platforms || []).join(', ') },
+        { header: 'Start Date', key: 'start_date', type: 'date' },
+        { header: 'End Date', key: 'end_date', type: 'date' },
+      ],
+    },
+    {
+      name: 'Content',
+      rows: content,
+      columns: [
+        { header: 'Title', key: 'title' },
+        { header: 'Platform', key: 'platform' },
+        { header: 'Type', key: 'content_type' },
+        { header: 'Status', key: 'status' },
+        { header: 'Scheduled Date', key: 'scheduled_date', type: 'date' },
+        { header: 'Published Date', key: 'published_date', type: 'date' },
+      ],
+    },
+    {
+      name: 'Income',
+      rows: income,
+      columns: [
+        { header: 'Source', key: 'source' },
+        { header: 'Category', key: 'category' },
+        { header: 'Amount', key: 'amount', type: 'number' },
+        { header: 'Currency', key: 'currency' },
+        { header: 'Date', key: 'date', type: 'date' },
+        { header: 'Status', key: 'status' },
+      ],
+    },
+    {
+      name: 'Rate Cards',
+      rows: rateCardRows,
+      columns: [
+        { header: 'Rate Card', key: 'name' },
+        { header: 'Default', key: 'is_default' },
+        { header: 'Platforms', key: 'platforms' },
+        { header: 'Audience Size', key: 'audience_size', type: 'number' },
+        { header: 'Engagement Rate', key: 'engagement_rate', type: 'number' },
+        { header: 'Service', key: 'service' },
+        { header: 'Price', key: 'price', type: 'number' },
+        { header: 'Created At', key: 'created_at', type: 'date' },
+      ],
+    },
+  ];
+
   await api('/audit/export', {
     method: 'POST',
     body: JSON.stringify({
@@ -569,7 +686,7 @@ export async function exportDashboardReport({ stats = {}, pipelineStats = [], co
     }),
   }).catch(() => null);
 
-  const workbook = buildDashboardXlsx({ stats, campaignRows, contentRows });
+  const workbook = buildDashboardXlsx({ stats, campaignRows, contentRows, extraSheets });
   const url = URL.createObjectURL(workbook);
   const link = document.createElement('a');
   link.href = url;
