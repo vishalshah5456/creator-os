@@ -9,6 +9,7 @@ export default function ExportMenu({
   fullRows,
   selectedRows = [],
   filters = {},
+  onExport,
 }) {
   const [exporting, setExporting] = useState(false);
   const [open, setOpen] = useState(false);
@@ -36,7 +37,11 @@ export default function ExportMenu({
     setOpen(false);
     setExporting(true);
     try {
-      await exportRowsToExcel({ reportName, rows, columns, scope, filters });
+      if (onExport) {
+        await onExport({ scope, rows, filters });
+      } else {
+        await exportRowsToExcel({ reportName, rows, columns, scope, filters });
+      }
     } finally {
       setExporting(false);
     }

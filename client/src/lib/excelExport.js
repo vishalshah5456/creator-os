@@ -299,6 +299,252 @@ function buildXlsx(rows, columns, sheetName, metadata) {
   ]);
 }
 
+function cell(ref, value, style = 0, type = 'inlineStr') {
+  if (type === 'number') return `<c r="${ref}" s="${style}"><v>${Number(value) || 0}</v></c>`;
+  return `<c r="${ref}" t="inlineStr" s="${style}"><is><t>${xmlEscape(value)}</t></is></c>`;
+}
+
+function blankRow(rowNumber) {
+  return `<row r="${rowNumber}"/>`;
+}
+
+function buildDashboardWorksheet({ stats, campaignRows, contentRows }) {
+  const maxCampaign = Math.max(...campaignRows.map(row => row.count), 0);
+  const maxContent = Math.max(...contentRows.map(row => row.count), 0);
+
+  const campaignDataRows = campaignRows.map((row, index) => {
+    const rowNumber = 11 + index;
+    const rowStyle = index % 2 === 0 ? 12 : 13;
+    return `<row r="${rowNumber}" ht="22" customHeight="1">
+      ${cell(`A${rowNumber}`, row.stage, rowStyle)}
+      ${cell(`B${rowNumber}`, row.count, 10, 'number')}
+    </row>`;
+  }).join('');
+
+  const contentDataRows = contentRows.map((row, index) => {
+    const rowNumber = 35 + index;
+    return `<row r="${rowNumber}" ht="22" customHeight="1">
+      ${cell(`A${rowNumber}`, row.status, 8)}
+      ${cell(`B${rowNumber}`, row.count, 10, 'number')}
+    </row>`;
+  }).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <dimension ref="A1:H50"/>
+  <sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews>
+  <sheetFormatPr defaultRowHeight="18"/>
+  <cols>
+    <col min="1" max="1" width="24" customWidth="1"/>
+    <col min="2" max="2" width="14" customWidth="1"/>
+    <col min="3" max="8" width="13" customWidth="1"/>
+  </cols>
+  <sheetData>
+    <row r="1" ht="30" customHeight="1">${cell('A1', 'CreatorCRM Dashboard Report', 1)}</row>
+    <row r="2" ht="20" customHeight="1">${cell('A2', `Generated ${new Date().toLocaleString()}`, 2)}</row>
+
+    <row r="3" ht="24" customHeight="1">${cell('A3', 'Deals Summary', 3)}</row>
+    <row r="4" ht="22" customHeight="1">${cell('A4', 'Metric', 4)}${cell('B4', 'Count', 4)}</row>
+    <row r="5" ht="22" customHeight="1">${cell('A5', 'Total Deals', 8)}${cell('B5', stats.totalDeals || 0, 10, 'number')}</row>
+    <row r="6" ht="22" customHeight="1">${cell('A6', 'Active Deals', 8)}${cell('B6', stats.activeDeals || 0, 10, 'number')}</row>
+    ${blankRow(7)}
+    ${blankRow(8)}
+
+    <row r="9" ht="24" customHeight="1">${cell('A9', 'Campaign Performance', 5)}</row>
+    <row r="10" ht="22" customHeight="1">${cell('A10', 'Campaign Stage', 6)}${cell('B10', 'Count', 6)}</row>
+    ${campaignDataRows}
+    <row r="16" ht="18" customHeight="1">${cell('A16', `Highest campaign count: ${maxCampaign}`, 2)}</row>
+    ${blankRow(17)}
+
+    <row r="33" ht="24" customHeight="1">${cell('A33', 'Content Status', 7)}</row>
+    <row r="34" ht="22" customHeight="1">${cell('A34', 'Status', 9)}${cell('B34', 'Count', 9)}</row>
+    ${contentDataRows}
+    <row r="38" ht="18" customHeight="1">${cell('A38', `Highest content count: ${maxContent}`, 2)}</row>
+  </sheetData>
+  <mergeCells count="3">
+    <mergeCell ref="A1:H1"/>
+    <mergeCell ref="A3:B3"/>
+    <mergeCell ref="A9:B9"/>
+  </mergeCells>
+  <drawing r:id="rId1"/>
+  <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
+</worksheet>`;
+}
+
+function buildDashboardStyles() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="4">
+    <font><sz val="12"/><color rgb="FF111827"/><name val="Calibri"/></font>
+    <font><b/><sz val="18"/><color rgb="FF111827"/><name val="Calibri"/></font>
+    <font><b/><sz val="12"/><color rgb="FF111827"/><name val="Calibri"/></font>
+    <font><b/><sz val="12"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+  </fonts>
+  <fills count="8">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFDDEBFF"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF2563EB"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF16A34A"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFDCFCE7"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF97316"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFEDD5"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color rgb="FFD1D5DB"/></left>
+      <right style="thin"><color rgb="FFD1D5DB"/></right>
+      <top style="thin"><color rgb="FFD1D5DB"/></top>
+      <bottom style="thin"><color rgb="FFD1D5DB"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="14">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+    <xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+    <xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="left"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="6" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="left"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="left"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1"><alignment horizontal="left"/></xf>
+  </cellXfs>
+</styleSheet>`;
+}
+
+function buildDrawingXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <xdr:twoCellAnchor>
+    <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>17</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    <xdr:to><xdr:col>6</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>31</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+    <xdr:graphicFrame macro="">
+      <xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="Campaign Performance Chart"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>
+      <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+      <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/></a:graphicData></a:graphic>
+    </xdr:graphicFrame>
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>
+  <xdr:twoCellAnchor>
+    <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>38</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    <xdr:to><xdr:col>6</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>49</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+    <xdr:graphicFrame macro="">
+      <xdr:nvGraphicFramePr><xdr:cNvPr id="3" name="Content Status Chart"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>
+      <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+      <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId2"/></a:graphicData></a:graphic>
+    </xdr:graphicFrame>
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>
+</xdr:wsDr>`;
+}
+
+function buildBarChartXml({ title, categoryRange, valueRange, color }) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <c:chart>
+    <c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="1200" b="1"/><a:t>${xmlEscape(title)}</a:t></a:r></a:p></c:rich></c:tx><c:layout/></c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:barDir val="bar"/>
+        <c:grouping val="clustered"/>
+        <c:ser>
+          <c:idx val="0"/><c:order val="0"/>
+          <c:spPr><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></c:spPr>
+          <c:cat><c:strRef><c:f>${categoryRange}</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>${valueRange}</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:axId val="10"/><c:axId val="20"/>
+      </c:barChart>
+      <c:catAx><c:axId val="10"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:tickLblPos val="nextTo"/><c:crossAx val="20"/><c:crosses val="autoZero"/></c:catAx>
+      <c:valAx><c:axId val="20"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:majorGridlines/><c:numFmt formatCode="0" sourceLinked="1"/><c:tickLblPos val="nextTo"/><c:crossAx val="10"/><c:crosses val="autoZero"/></c:valAx>
+    </c:plotArea>
+    <c:legend><c:legendPos val="r"/><c:delete val="1"/></c:legend>
+    <c:plotVisOnly val="1"/>
+  </c:chart>
+</c:chartSpace>`;
+}
+
+function buildDashboardXlsx({ stats, campaignRows, contentRows }) {
+  const sheetName = 'Dashboard Report';
+  return createZip([
+    {
+      name: '[Content_Types].xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+  <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+  <Override PartName="/xl/charts/chart2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+</Types>`,
+    },
+    {
+      name: '_rels/.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+    },
+    {
+      name: 'xl/worksheets/_rels/sheet1.xml.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`,
+    },
+    {
+      name: 'xl/drawings/_rels/drawing1.xml.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart2.xml"/>
+</Relationships>`,
+    },
+    { name: 'xl/workbook.xml', content: buildWorkbook(sheetName) },
+    { name: 'xl/styles.xml', content: buildDashboardStyles() },
+    { name: 'xl/worksheets/sheet1.xml', content: buildDashboardWorksheet({ stats, campaignRows, contentRows }) },
+    { name: 'xl/drawings/drawing1.xml', content: buildDrawingXml() },
+    {
+      name: 'xl/charts/chart1.xml',
+      content: buildBarChartXml({
+        title: 'Campaign Performance',
+        categoryRange: "'Dashboard Report'!$A$11:$A$15",
+        valueRange: "'Dashboard Report'!$B$11:$B$15",
+        color: '16A34A',
+      }),
+    },
+    {
+      name: 'xl/charts/chart2.xml',
+      content: buildBarChartXml({
+        title: 'Content Status',
+        categoryRange: "'Dashboard Report'!$A$35:$A$37",
+        valueRange: "'Dashboard Report'!$B$35:$B$37",
+        color: 'F97316',
+      }),
+    },
+  ]);
+}
+
 export function todayStamp() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -318,6 +564,44 @@ export async function exportRowsToExcel({ reportName, rows, columns, scope = 'fi
   }).catch(() => null);
 
   const workbook = buildXlsx(rows, columns, reportName, { scope, filters });
+  const url = URL.createObjectURL(workbook);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function exportDashboardReport({ stats = {}, pipelineStats = [], contentStatusStats = [], scope = 'filtered', filters = {} }) {
+  const safeReportName = 'creatorcrm-dashboard-report';
+  const fileName = `${safeReportName}_${todayStamp()}.xlsx`;
+  const campaignOrder = ['paid', 'negotiation', 'delivered', 'contract', 'outreach'];
+  const contentOrder = ['draft', 'scheduled', 'published'];
+  const getCampaignCount = (stage) => pipelineStats.find(item => item.pipeline_stage === stage)?.count || 0;
+  const getContentCount = (status) => contentStatusStats.find(item => item.status === status)?.count || 0;
+
+  const campaignRows = campaignOrder.map(stage => ({
+    stage: titleCase(stage),
+    count: getCampaignCount(stage),
+  }));
+  const contentRows = contentOrder.map(status => ({
+    status: titleCase(status),
+    count: getContentCount(status),
+  }));
+
+  await api('/audit/export', {
+    method: 'POST',
+    body: JSON.stringify({
+      report_name: safeReportName,
+      scope,
+      row_count: 10,
+      filters,
+    }),
+  }).catch(() => null);
+
+  const workbook = buildDashboardXlsx({ stats, campaignRows, contentRows });
   const url = URL.createObjectURL(workbook);
   const link = document.createElement('a');
   link.href = url;

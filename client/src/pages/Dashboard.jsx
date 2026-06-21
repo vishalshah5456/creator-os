@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, formatCurrency, formatNumber } from '../lib/utils';
 import ExportMenu from '../components/ExportMenu';
+import { exportDashboardReport } from '../lib/excelExport';
 import {
   Handshake, CalendarDays, DollarSign, TrendingUp,
   ArrowUpRight, X, Info
@@ -116,6 +117,13 @@ export default function Dashboard() {
           filteredRows={dashboardExportRows}
           fullRows={dashboardExportRows}
           filters={{ page: 'dashboard' }}
+          onExport={({ scope, filters }) => exportDashboardReport({
+            stats,
+            pipelineStats,
+            contentStatusStats,
+            scope,
+            filters,
+          })}
         />
       </div>
 
