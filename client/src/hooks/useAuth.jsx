@@ -223,6 +223,41 @@ export function AuthProvider({ children }) {
     setUser(currentUser => currentUser ? { ...currentUser, has_password: true } : currentUser);
   };
 
+  const refreshProfile = async () => {
+    const profile = await api('/auth/me');
+    setUser(profile);
+    return profile;
+  };
+
+  const updateProfile = async (profile) => {
+    const updatedProfile = await api('/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profile),
+    });
+    setUser(updatedProfile);
+    return updatedProfile;
+  };
+
+  const updateEmail = async (email) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const { error } = await supabase.auth.updateUser(
+      { email: normalizedEmail },
+      { emailRedirectTo: `${appUrl}/profile` }
+    );
+
+    if (error) throw new Error(error.message);
+    return normalizedEmail;
+  };
+
+  const sendPasswordReset = async (email) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: `${appUrl}/login`,
+    });
+
+    if (error) throw new Error(error.message);
+  };
+
   const loginWithGoogle = async (rememberMe = false) => {
     localStorage.setItem(REMEMBER_ME_KEY, rememberMe ? 'true' : 'false');
 
@@ -243,7 +278,19 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, loginWithGoogle, setPassword, logout, loading }}>
+    <AuthContext.Provider value={{
+      user,
+      login,
+      register,
+      loginWithGoogle,
+      setPassword,
+      updateProfile,
+      updateEmail,
+      sendPasswordReset,
+      refreshProfile,
+      logout,
+      loading
+    }}>
       {children}
       {user && !user.has_password && <PasswordSetupPrompt />}
     </AuthContext.Provider>

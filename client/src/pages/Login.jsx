@@ -11,19 +11,29 @@ export default function Login() {
   const [handle, setHandle] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const { login, register, loginWithGoogle } = useAuth();
+  const [forgotPassword, setForgotPassword] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState('');
+  const { login, register, loginWithGoogle, sendPasswordReset, setPassword: setAccountPassword } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     const message = consumeSessionMessage();
     if (message) setError(message);
+    const recoveryParams = `${window.location.hash} ${window.location.search}`;
+    if (recoveryParams.includes('type=recovery') || recoveryParams.includes('access_token=')) {
+      setRecoveryMode(true);
+    }
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setNotice('');
     setLoading(true);
 
     try {
@@ -46,12 +56,65 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     setError('');
+    setNotice('');
     setLoading(true);
 
     try {
       await loginWithGoogle(rememberMe);
     } catch (err) {
       setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setError('');
+    setNotice('');
+
+    if (!email.trim()) {
+      setError('Enter your email address first.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await sendPasswordReset(email);
+      setNotice('Password reset email sent. Check your inbox and spam folder.');
+      setForgotPassword(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRecoveryPassword = async (e) => {
+    e.preventDefault();
+    setError('');
+    setNotice('');
+
+    if (recoveryPassword.length < 12) {
+      setError('Use at least 12 characters for your new password.');
+      return;
+    }
+
+    if (recoveryPassword !== recoveryConfirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await setAccountPassword(recoveryPassword);
+      setNotice('Password updated. You can now sign in with your new password.');
+      setRecoveryMode(false);
+      setRecoveryPassword('');
+      setRecoveryConfirmPassword('');
+      window.history.replaceState({}, document.title, '/login');
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setLoading(false);
     }
   };
@@ -80,6 +143,74 @@ export default function Login() {
               {error}
             </div>
           )}
+          {notice && (
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+              {notice}
+            </div>
+          )}
+
+          {recoveryMode ? (
+            <form onSubmit={handleRecoveryPassword} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <input
+                  type="password"
+                  minLength={12}
+                  value={recoveryPassword}
+                  onChange={(e) => setRecoveryPassword(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                <input
+                  type="password"
+                  minLength={12}
+                  value={recoveryConfirmPassword}
+                  onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Saving...' : 'Update password'}
+              </button>
+            </form>
+          ) : forgotPassword ? (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                  placeholder="you@example.com"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Sending...' : 'Send reset email'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setForgotPassword(false); setError(''); setNotice(''); }}
+                className="w-full text-sm text-brand-600 hover:text-brand-700 font-medium"
+              >
+                Back to sign in
+              </button>
+            </form>
+          ) : (
+            <>
 
           <button
             type="button"
@@ -147,7 +278,18 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">Password</label>
+                {isLogin && (
+                  <button
+                    type="button"
+                    onClick={() => { setForgotPassword(true); setError(''); setNotice(''); }}
+                    className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                  >
+                    Forgotten password?
+                  </button>
+                )}
+              </div>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -179,12 +321,14 @@ export default function Login() {
 
           <div className="mt-6 text-center">
             <button
-              onClick={() => { setIsLogin(!isLogin); setError(''); }}
+              onClick={() => { setIsLogin(!isLogin); setError(''); setNotice(''); }}
               className="text-sm text-brand-600 hover:text-brand-700 font-medium"
             >
               {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
             </button>
           </div>
+            </>
+          )}
         </div>
       </div>
     </div>

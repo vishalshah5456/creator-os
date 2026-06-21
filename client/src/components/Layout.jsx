@@ -8,6 +8,7 @@ import {
   FileText,
   LogOut,
   Menu,
+  UserRound,
   X,
   Zap
 } from 'lucide-react';
@@ -20,6 +21,7 @@ const navItems = [
   { path: '/content', label: 'Content', icon: CalendarDays },
   { path: '/income', label: 'Income', icon: DollarSign },
   { path: '/rate-card', label: 'Rate Card', icon: FileText },
+  { path: '/profile', label: 'Profile', icon: UserRound },
 ];
 
 export default function Layout() {
@@ -75,7 +77,11 @@ export default function Layout() {
         </nav>
 
         <div className="p-4 border-t border-gray-100">
-          <div className="flex items-center gap-3 mb-4">
+          <NavLink
+            to="/profile"
+            onClick={() => setSidebarOpen(false)}
+            className="flex items-center gap-3 mb-4 rounded-lg p-2 hover:bg-gray-50 transition-colors"
+          >
             <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center">
               <span className="text-sm font-semibold text-brand-700">
                 {user?.name?.charAt(0) || 'U'}
@@ -85,7 +91,7 @@ export default function Layout() {
               <p className="text-sm font-medium text-gray-900 truncate">{user?.name}</p>
               <p className="text-xs text-gray-500 truncate">{user?.email}</p>
             </div>
-          </div>
+          </NavLink>
           <button
             onClick={logout}
             className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"

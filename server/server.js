@@ -198,6 +198,36 @@ app.post('/api/auth/password-set', authMiddleware, (req, res) => {
 
 app.get('/api/auth/me', authMiddleware, getUser);
 
+app.put('/api/profile', authMiddleware, (req, res) => {
+  const errors = [];
+  const name = cleanString(req.body.name, 120);
+  const handle = cleanString(req.body.handle, 80);
+  const bio = cleanOptionalString(req.body.bio, 1000);
+  const niche = cleanOptionalString(req.body.niche, 120);
+  const followers = cleanNumber(req.body.followers, 0);
+  const platforms = Array.isArray(req.body.platforms)
+    ? req.body.platforms.filter(platform => PLATFORMS.has(platform)).slice(0, MAX_PLATFORMS)
+    : [];
+
+  requireValid(Boolean(name), 'Name is required.', errors);
+  requireValid(Boolean(handle), 'Creator handle is required.', errors);
+  requireValid(followers !== null, 'Followers must be a valid number.', errors);
+
+  if (errors.length) return sendValidation(res, errors);
+
+  db.run(
+    `UPDATE users
+     SET name = ?, handle = ?, bio = ?, niche = ?, followers = ?, platforms = ?
+     WHERE id = ?`,
+    [name, handle, bio, niche, followers, JSON.stringify(platforms), req.userId],
+    function(err) {
+      if (err) return res.status(500).json({ error: 'Unable to update profile' });
+      auditEvent(req, 'profile_update', 'user', req.userId);
+      getUser(req, res);
+    }
+  );
+});
+
 app.post('/api/audit/export', authMiddleware, (req, res) => {
   const reportName = cleanString(req.body.report_name || 'report', 120);
   const scope = cleanString(req.body.scope || 'filtered', 30);

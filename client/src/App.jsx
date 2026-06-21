@@ -7,6 +7,7 @@ import Deals from './pages/Deals';
 import Content from './pages/Content';
 import Income from './pages/Income';
 import RateCard from './pages/RateCard';
+import Profile from './pages/Profile';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -32,6 +33,7 @@ function App() {
             <Route path="content" element={<Content />} />
             <Route path="income" element={<Income />} />
             <Route path="rate-card" element={<RateCard />} />
+            <Route path="profile" element={<Profile />} />
           </Route>
         </Routes>
       </BrowserRouter>
