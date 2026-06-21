@@ -127,17 +127,28 @@ function createZip(files) {
   });
 }
 
-function buildWorksheet(rows, columns, sheetName) {
+function titleCase(value) {
+  return String(value || '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function buildWorksheet(rows, columns, sheetName, metadata = {}) {
   const safeRows = rows.slice(0, 100000);
-  const widths = columns.map((column) => Math.min(Math.max(String(column.header).length + 2, 12), 42));
+  const sheetColCount = Math.max(columns.length, 4);
+  const widths = Array.from({ length: sheetColCount }, (_, index) => (
+    Math.min(Math.max(String(columns[index]?.header || '').length + 2, 12), 42)
+  ));
+  const lastDataColumn = columnName(Math.max(columns.length - 1, 0));
+  const lastSheetColumn = columnName(sheetColCount - 1);
 
   const headerCells = columns.map((column, columnIndex) => {
-    const ref = `${columnName(columnIndex)}1`;
+    const ref = `${columnName(columnIndex)}4`;
     return `<c r="${ref}" t="inlineStr" s="3"><is><t>${xmlEscape(column.header)}</t></is></c>`;
   }).join('');
 
   const dataRows = safeRows.map((row, rowIndex) => {
-    const rowNumber = rowIndex + 2;
+    const rowNumber = rowIndex + 5;
     const cells = columns.map((column, columnIndex) => {
       const rawValue = typeof column.value === 'function' ? column.value(row) : row[column.key];
       const displayValue = rawValue === undefined || rawValue === null ? '' : rawValue;
@@ -147,7 +158,7 @@ function buildWorksheet(rows, columns, sheetName) {
       if (column.type === 'currency' || column.type === 'number') {
         const number = Number(displayValue);
         if (Number.isFinite(number)) {
-          return `<c r="${ref}" s="${column.type === 'currency' ? 2 : 0}"><v>${number}</v></c>`;
+          return `<c r="${ref}" s="${column.type === 'currency' ? 2 : 7}"><v>${number}</v></c>`;
         }
       }
 
@@ -156,7 +167,7 @@ function buildWorksheet(rows, columns, sheetName) {
         if (dateNumber) return `<c r="${ref}" s="1"><v>${dateNumber}</v></c>`;
       }
 
-      return `<c r="${ref}" t="inlineStr"><is><t>${xmlEscape(displayValue)}</t></is></c>`;
+      return `<c r="${ref}" t="inlineStr" s="8"><is><t>${xmlEscape(displayValue)}</t></is></c>`;
     }).join('');
     return `<row r="${rowNumber}">${cells}</row>`;
   }).join('');
@@ -165,18 +176,40 @@ function buildWorksheet(rows, columns, sheetName) {
     `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`
   )).join('');
 
-  const lastCell = `${columnName(Math.max(columns.length - 1, 0))}${safeRows.length + 1}`;
+  const generatedAt = new Date().toLocaleString();
+  const lastCell = `${lastSheetColumn}${safeRows.length + 4}`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <dimension ref="A1:${lastCell}"/>
-  <sheetViews><sheetView workbookViewId="0"/></sheetViews>
-  <sheetFormatPr defaultRowHeight="15"/>
+  <sheetViews>
+    <sheetView workbookViewId="0">
+      <pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/>
+      <selection pane="bottomLeft"/>
+    </sheetView>
+  </sheetViews>
+  <sheetFormatPr defaultRowHeight="18"/>
   <cols>${cols}</cols>
   <sheetData>
-    <row r="1">${headerCells}</row>
+    <row r="1" ht="28" customHeight="1">
+      <c r="A1" t="inlineStr" s="4"><is><t>${xmlEscape(titleCase(sheetName))}</t></is></c>
+    </row>
+    <row r="2" ht="20" customHeight="1">
+      <c r="A2" t="inlineStr" s="5"><is><t>Generated</t></is></c>
+      <c r="B2" t="inlineStr" s="6"><is><t>${xmlEscape(generatedAt)}</t></is></c>
+      <c r="C2" t="inlineStr" s="5"><is><t>Scope</t></is></c>
+      <c r="D2" t="inlineStr" s="6"><is><t>${xmlEscape(titleCase(metadata.scope || 'filtered'))}</t></is></c>
+    </row>
+    <row r="3" ht="20" customHeight="1">
+      <c r="A3" t="inlineStr" s="5"><is><t>Rows</t></is></c>
+      <c r="B3" s="7"><v>${safeRows.length}</v></c>
+      <c r="C3" t="inlineStr" s="5"><is><t>Product</t></is></c>
+      <c r="D3" t="inlineStr" s="6"><is><t>CreatorCRM</t></is></c>
+    </row>
+    <row r="4" ht="22" customHeight="1">${headerCells}</row>
     ${dataRows}
   </sheetData>
-  <autoFilter ref="A1:${lastCell}"/>
+  <autoFilter ref="A4:${lastDataColumn}${safeRows.length + 4}"/>
+  <mergeCells count="1"><mergeCell ref="A1:${lastSheetColumn}1"/></mergeCells>
   <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
 </worksheet>`;
 }
@@ -195,20 +228,44 @@ function buildStyles() {
     <numFmt numFmtId="164" formatCode="yyyy-mm-dd"/>
     <numFmt numFmtId="165" formatCode="$#,##0.00"/>
   </numFmts>
-  <fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
-  <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
-  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <fonts count="4">
+    <font><sz val="11"/><color rgb="FF111827"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+    <font><b/><sz val="16"/><color rgb="FF111827"/><name val="Calibri"/></font>
+    <font><b/><sz val="10"/><color rgb="FF6B7280"/><name val="Calibri"/></font>
+  </fonts>
+  <fills count="4">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF111827"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF9FAFB"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border>
+      <left style="thin"><color rgb="FFE5E7EB"/></left>
+      <right style="thin"><color rgb="FFE5E7EB"/></right>
+      <top style="thin"><color rgb="FFE5E7EB"/></top>
+      <bottom style="thin"><color rgb="FFE5E7EB"/></bottom>
+      <diagonal/>
+    </border>
+  </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="4">
+  <cellXfs count="9">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
-    <xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
-    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+    <xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+    <xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
+    <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment wrapText="1" vertical="top"/></xf>
   </cellXfs>
 </styleSheet>`;
 }
 
-function buildXlsx(rows, columns, sheetName) {
+function buildXlsx(rows, columns, sheetName, metadata) {
   return createZip([
     {
       name: '[Content_Types].xml',
@@ -238,7 +295,7 @@ function buildXlsx(rows, columns, sheetName) {
     },
     { name: 'xl/workbook.xml', content: buildWorkbook(sheetName) },
     { name: 'xl/styles.xml', content: buildStyles() },
-    { name: 'xl/worksheets/sheet1.xml', content: buildWorksheet(rows, columns, sheetName) },
+    { name: 'xl/worksheets/sheet1.xml', content: buildWorksheet(rows, columns, sheetName, metadata) },
   ]);
 }
 
@@ -260,7 +317,7 @@ export async function exportRowsToExcel({ reportName, rows, columns, scope = 'fi
     }),
   }).catch(() => null);
 
-  const workbook = buildXlsx(rows, columns, reportName);
+  const workbook = buildXlsx(rows, columns, reportName, { scope, filters });
   const url = URL.createObjectURL(workbook);
   const link = document.createElement('a');
   link.href = url;
