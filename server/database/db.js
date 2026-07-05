@@ -9,6 +9,9 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' },
+  max: Number(process.env.DB_POOL_MAX || 20),
+  connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 3000),
+  statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT_MS || 5000),
 });
 
 function toPostgresQuery(sql) {

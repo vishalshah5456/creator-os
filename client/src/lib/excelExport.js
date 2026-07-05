@@ -600,9 +600,9 @@ export async function exportDashboardReport({ stats = {}, pipelineStats = [], co
   }));
 
   const [deals, content, income, rateCards] = await Promise.all([
-    api('/deals').catch(() => []),
-    api('/content').catch(() => []),
-    api('/income').catch(() => []),
+    api('/deals?limit=500').catch(() => []),
+    api('/content?limit=500').catch(() => []),
+    api('/income?limit=500').catch(() => []),
     api('/rate-cards').catch(() => []),
   ]);
 

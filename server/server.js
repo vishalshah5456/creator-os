@@ -63,6 +63,14 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const dashboardLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.userId,
+});
+
 app.use('/api/auth', authLimiter);
 app.use('/api', apiLimiter);
 
@@ -115,6 +123,26 @@ function requireValid(condition, message, errors) {
 
 function sendValidation(res, errors) {
   return res.status(400).json({ error: errors.join(' ') });
+}
+
+function getPagination(req) {
+  const rawLimit = Number(req.query.limit || 100);
+  const rawOffset = Number(req.query.offset || 0);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.floor(rawLimit), 1), 500) : 100;
+  const offset = Number.isFinite(rawOffset) ? Math.min(Math.max(Math.floor(rawOffset), 0), 100000) : 0;
+  return { limit, offset };
+}
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => err ? reject(err) : resolve(row));
+  });
+}
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows || []));
+  });
 }
 
 function parseJson(value, fallback) {
@@ -247,7 +275,8 @@ app.post('/api/audit/export', authMiddleware, (req, res) => {
 });
 
 app.get('/api/deals', authMiddleware, (req, res) => {
-  db.all('SELECT * FROM deals WHERE user_id = ? ORDER BY created_at DESC', [req.userId], (err, deals) => {
+  const { limit, offset } = getPagination(req);
+  db.all('SELECT * FROM deals WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?', [req.userId, limit, offset], (err, deals) => {
     if (err) return res.status(500).json({ error: 'Unable to load deals' });
     deals = deals || [];
     deals.forEach(d => {
@@ -434,7 +463,8 @@ app.delete('/api/deals/:id', authMiddleware, validateIdParam, (req, res) => {
 });
 
 app.get('/api/content', authMiddleware, (req, res) => {
-  db.all('SELECT * FROM content WHERE user_id = ? ORDER BY scheduled_date DESC', [req.userId], (err, content) => {
+  const { limit, offset } = getPagination(req);
+  db.all('SELECT * FROM content WHERE user_id = ? ORDER BY scheduled_date DESC LIMIT ? OFFSET ?', [req.userId, limit, offset], (err, content) => {
     if (err) return res.status(500).json({ error: 'Unable to load content' });
     content = content || [];
     content.forEach(c => {
@@ -525,7 +555,8 @@ app.delete('/api/content/:id', authMiddleware, validateIdParam, (req, res) => {
 });
 
 app.get('/api/income', authMiddleware, (req, res) => {
-  db.all('SELECT * FROM income WHERE user_id = ? ORDER BY date DESC', [req.userId], (err, income) => {
+  const { limit, offset } = getPagination(req);
+  db.all('SELECT * FROM income WHERE user_id = ? ORDER BY date DESC LIMIT ? OFFSET ?', [req.userId, limit, offset], (err, income) => {
     if (err) return res.status(500).json({ error: 'Unable to load income' });
     res.json(income || []);
   });
@@ -646,45 +677,45 @@ app.delete('/api/income/:id', authMiddleware, validateIdParam, (req, res) => {
   });
 });
 
-app.get('/api/dashboard', authMiddleware, (req, res) => {
+app.get('/api/dashboard', authMiddleware, dashboardLimiter, async (req, res) => {
   const userId = req.userId;
 
-  db.get('SELECT COUNT(*) as total_deals FROM deals WHERE user_id = ?', [userId], (dealsErr, dealsCount) => {
-    if (dealsErr) return res.status(500).json({ error: 'Unable to load dashboard' });
-    db.get('SELECT COUNT(*) as total_content FROM content WHERE user_id = ?', [userId], (contentErr, contentCount) => {
-      if (contentErr) return res.status(500).json({ error: 'Unable to load dashboard' });
-      db.all('SELECT status, COUNT(*) as count FROM content WHERE user_id = ? GROUP BY status', [userId], (statusErr, contentStatusStats) => {
-        if (statusErr) return res.status(500).json({ error: 'Unable to load dashboard' });
-        db.get("SELECT SUM(amount) as total_income FROM income WHERE user_id = ? AND status = 'received'", [userId], (incomeErr, incomeSum) => {
-          if (incomeErr) return res.status(500).json({ error: 'Unable to load dashboard' });
-          db.get("SELECT COUNT(*) as active_deals FROM deals WHERE user_id = ? AND pipeline_stage != 'paid'", [userId], (activeErr, activeDeals) => {
-            if (activeErr) return res.status(500).json({ error: 'Unable to load dashboard' });
-            db.all("SELECT TO_CHAR(date::date, 'YYYY-MM') as month, SUM(amount) as amount FROM income WHERE user_id = ? GROUP BY month ORDER BY month DESC LIMIT 6", [userId], (monthlyErr, monthlyIncome) => {
-              if (monthlyErr) return res.status(500).json({ error: 'Unable to load dashboard' });
-              db.all('SELECT pipeline_stage, COUNT(*) as count FROM deals WHERE user_id = ? GROUP BY pipeline_stage', [userId], (pipelineErr, pipelineStats) => {
-                if (pipelineErr) return res.status(500).json({ error: 'Unable to load dashboard' });
-                db.all("SELECT source, SUM(amount) as amount FROM income WHERE user_id = ? AND status = 'received' GROUP BY source ORDER BY amount DESC LIMIT 5", [userId], (sourcesErr, incomeSources) => {
-                  if (sourcesErr) return res.status(500).json({ error: 'Unable to load dashboard' });
-                  res.json({
-                    stats: {
-                      totalDeals: dealsCount?.total_deals || 0,
-                      totalContent: contentCount?.total_content || 0,
-                      totalIncome: incomeSum?.total_income || 0,
-                      activeDeals: activeDeals?.active_deals || 0,
-                    },
-                    monthlyIncome: monthlyIncome || [],
-                    pipelineStats: pipelineStats || [],
-                    contentStatusStats: contentStatusStats || [],
-                    incomeSources: incomeSources || [],
-                  });
-                });
-              });
-            });
-          });
-        });
-      });
+  try {
+    const [
+      dealsCount,
+      contentCount,
+      contentStatusStats,
+      incomeSum,
+      activeDeals,
+      monthlyIncome,
+      pipelineStats,
+      incomeSources,
+    ] = await Promise.all([
+      dbGet('SELECT COUNT(*) as total_deals FROM deals WHERE user_id = ?', [userId]),
+      dbGet('SELECT COUNT(*) as total_content FROM content WHERE user_id = ?', [userId]),
+      dbAll('SELECT status, COUNT(*) as count FROM content WHERE user_id = ? GROUP BY status', [userId]),
+      dbGet("SELECT SUM(amount) as total_income FROM income WHERE user_id = ? AND status = 'received'", [userId]),
+      dbGet("SELECT COUNT(*) as active_deals FROM deals WHERE user_id = ? AND pipeline_stage != 'paid'", [userId]),
+      dbAll("SELECT TO_CHAR(date::date, 'YYYY-MM') as month, SUM(amount) as amount FROM income WHERE user_id = ? GROUP BY month ORDER BY month DESC LIMIT 6", [userId]),
+      dbAll('SELECT pipeline_stage, COUNT(*) as count FROM deals WHERE user_id = ? GROUP BY pipeline_stage', [userId]),
+      dbAll("SELECT source, SUM(amount) as amount FROM income WHERE user_id = ? AND status = 'received' GROUP BY source ORDER BY amount DESC LIMIT 5", [userId]),
+    ]);
+
+    res.json({
+      stats: {
+        totalDeals: dealsCount?.total_deals || 0,
+        totalContent: contentCount?.total_content || 0,
+        totalIncome: incomeSum?.total_income || 0,
+        activeDeals: activeDeals?.active_deals || 0,
+      },
+      monthlyIncome,
+      pipelineStats,
+      contentStatusStats,
+      incomeSources,
     });
-  });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to load dashboard' });
+  }
 });
 
 app.get('/api/rate-cards', authMiddleware, (req, res) => {
@@ -731,6 +762,57 @@ app.post('/api/rate-cards', authMiddleware, (req, res) => {
       res.json({ id, user_id: req.userId });
     }
   );
+});
+
+app.put('/api/rate-cards/:id', authMiddleware, validateIdParam, (req, res) => {
+  db.get('SELECT * FROM rate_cards WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, currentCard) => {
+    if (err) return res.status(500).json({ error: 'Unable to load rate card' });
+    if (!currentCard) return res.status(404).json({ error: 'Rate card not found' });
+
+    const errors = [];
+    const name = req.body.name !== undefined ? cleanString(req.body.name, 120) : currentCard.name;
+    const audienceSize = req.body.audience_size !== undefined ? cleanNumber(req.body.audience_size, 0) : currentCard.audience_size;
+    const engagementRate = req.body.engagement_rate !== undefined ? cleanNumber(req.body.engagement_rate, 0) : currentCard.engagement_rate;
+    const platforms = req.body.platforms !== undefined && Array.isArray(req.body.platforms)
+      ? req.body.platforms.filter(p => PLATFORMS.has(p)).slice(0, MAX_PLATFORMS)
+      : parseJson(currentCard.platforms, []);
+    const services = req.body.services !== undefined && Array.isArray(req.body.services)
+      ? req.body.services.map(s => cleanString(s, 120)).filter(Boolean).slice(0, MAX_SERVICES)
+      : parseJson(currentCard.services, []);
+    const pricingTiers = req.body.pricing_tiers !== undefined && Array.isArray(req.body.pricing_tiers)
+      ? req.body.pricing_tiers.slice(0, MAX_PRICING_TIERS).map(tier => ({
+          service: cleanString(tier?.service, 120) || 'Service',
+          price: cleanNumber(tier?.price, 0) || 0,
+          description: cleanOptionalString(tier?.description, 500),
+        }))
+      : parseJson(currentCard.pricing_tiers, []);
+    const isDefault = req.body.is_default !== undefined ? (req.body.is_default ? 1 : 0) : currentCard.is_default;
+
+    requireValid(Boolean(name), 'Rate card name is required.', errors);
+    requireValid(audienceSize !== null, 'Audience size must be a positive number.', errors);
+    requireValid(engagementRate !== null, 'Engagement rate must be a positive number.', errors);
+    if (errors.length) return sendValidation(res, errors);
+
+    db.run(
+      `UPDATE rate_cards
+       SET name = ?, platforms = ?, services = ?, audience_size = ?, engagement_rate = ?, pricing_tiers = ?, is_default = ?
+       WHERE id = ? AND user_id = ?`,
+      [name, JSON.stringify(platforms), JSON.stringify(services), audienceSize, engagementRate, JSON.stringify(pricingTiers), isDefault, req.params.id, req.userId],
+      function(updateErr) {
+        if (updateErr) return res.status(500).json({ error: 'Unable to update rate card' });
+        auditEvent(req, 'update', 'rate_card', req.params.id);
+        res.json({ updated: this.changes });
+      }
+    );
+  });
+});
+
+app.delete('/api/rate-cards/:id', authMiddleware, validateIdParam, (req, res) => {
+  db.run('DELETE FROM rate_cards WHERE id = ? AND user_id = ?', [req.params.id, req.userId], function(err) {
+    if (err) return res.status(500).json({ error: 'Unable to delete rate card' });
+    auditEvent(req, 'delete', 'rate_card', req.params.id);
+    res.json({ deleted: this.changes });
+  });
 });
 
 app.use((err, req, res, next) => {
