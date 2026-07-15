@@ -168,6 +168,20 @@ async function initializeDatabase() {
   await pool.query('ALTER TABLE income ALTER COLUMN amount TYPE NUMERIC(12,2) USING ROUND(amount::numeric, 2)');
   await pool.query('ALTER TABLE rate_cards ALTER COLUMN engagement_rate TYPE NUMERIC(5,2) USING ROUND(engagement_rate::numeric, 2)');
 
+  // Keep one default card per user. Existing duplicate defaults are reduced to
+  // the oldest card before the database constraint is created.
+  await pool.query(`UPDATE rate_cards
+    SET is_default = 0
+    WHERE id IN (
+      SELECT id FROM (
+        SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at ASC NULLS LAST, id) AS position
+        FROM rate_cards
+        WHERE is_default = 1
+      ) duplicate_defaults
+      WHERE position > 1
+    )`);
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_cards_one_default_per_user ON rate_cards(user_id) WHERE is_default = 1');
+
   await pool.query('CREATE INDEX IF NOT EXISTS idx_deals_user_id ON deals(user_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_content_user_id ON content(user_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_income_user_id ON income(user_id)');

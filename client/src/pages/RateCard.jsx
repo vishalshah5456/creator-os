@@ -40,6 +40,8 @@ export default function RateCard() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [selectedCardId, setSelectedCardId] = useState(null);
+  const [settingDefault, setSettingDefault] = useState(false);
 
   useEffect(() => {
     loadRateCards();
@@ -47,12 +49,21 @@ export default function RateCard() {
 
   const loadRateCards = () => {
     api('/rate-cards')
-      .then(data => setRateCards(data))
+      .then(data => {
+        setRateCards(data);
+        setSelectedCardId(currentId => (
+          data.some(card => card.id === currentId)
+            ? currentId
+            : data.find(card => card.is_default)?.id || data[0]?.id || null
+        ));
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
 
-  const activeCard = rateCards.find(c => c.is_default) || rateCards[0];
+  const activeCard = rateCards.find(card => card.id === selectedCardId)
+    || rateCards.find(card => card.is_default)
+    || rateCards[0];
   const rateCardExportRows = rateCards.flatMap(card => (
     (card.pricing_tiers?.length ? card.pricing_tiers : [{ service: '', price: '', description: '' }]).map(tier => ({
       name: card.name,
@@ -84,6 +95,22 @@ export default function RateCard() {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const setDefaultRateCard = async () => {
+    if (!activeCard || activeCard.is_default) return;
+    setSettingDefault(true);
+    try {
+      await api(`/rate-cards/${activeCard.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ is_default: true }),
+      });
+      loadRateCards();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSettingDefault(false);
+    }
   };
 
   return (
@@ -127,13 +154,25 @@ export default function RateCard() {
                     <p className="text-gray-500">Media Kit & Rate Card</p>
                   </div>
                 </div>
-                <button
-                  onClick={copyRateCard}
-                  className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {!activeCard.is_default && (
+                    <button
+                      onClick={setDefaultRateCard}
+                      disabled={settingDefault}
+                      className="inline-flex items-center gap-2 px-4 py-2 border border-brand-200 rounded-lg text-sm font-medium text-brand-700 hover:bg-brand-50 transition-colors disabled:opacity-50"
+                    >
+                      <Star className="w-4 h-4" />
+                      {settingDefault ? 'Setting...' : 'Make default'}
+                    </button>
+                  )}
+                  <button
+                    onClick={copyRateCard}
+                    className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
               </div>
 
               {/* Stats */}
@@ -200,8 +239,10 @@ export default function RateCard() {
               <h3 className="font-semibold text-gray-900 mb-3">Your Rate Cards</h3>
               <div className="space-y-2">
                 {rateCards.map(card => (
-                  <div
+                  <button
                     key={card.id}
+                    type="button"
+                    onClick={() => setSelectedCardId(card.id)}
                     className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                       card.id === activeCard.id 
                         ? 'border-brand-300 bg-brand-50' 
@@ -214,7 +255,7 @@ export default function RateCard() {
                         <span className="text-xs px-2 py-0.5 bg-brand-100 text-brand-700 rounded-full">Default</span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -248,20 +289,20 @@ export default function RateCard() {
 
       {/* Add Modal */}
       {showAddModal && (
-        <RateCardModal onClose={() => setShowAddModal(false)} onSuccess={loadRateCards} />
+        <RateCardModal hasRateCards={rateCards.length > 0} onClose={() => setShowAddModal(false)} onSuccess={loadRateCards} />
       )}
     </div>
   );
 }
 
-function RateCardModal({ onClose, onSuccess }) {
+function RateCardModal({ hasRateCards, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
     name: 'My Media Kit',
     platforms: ['instagram'],
     audience_size: '',
     engagement_rate: '',
     pricing_tiers: [{ service: 'Feed Post', price: '', description: '' }],
-    is_default: true
+    is_default: !hasRateCards
   });
   const [saving, setSaving] = useState(false);
 
@@ -474,17 +515,21 @@ function RateCardModal({ onClose, onSuccess }) {
 }
 
 function generateRateCardText(card) {
-  let text = `${card.name}\n`;
-  text += `Audience: ${formatNumber(card.audience_size || 0)} followers\n`;
-  text += `Engagement: ${card.engagement_rate || 0}%\n\n`;
-  text += `Platforms: ${card.platforms?.map(p => {
+  const platforms = card.platforms?.map(p => {
     const platform = PLATFORMS.find(pl => pl.id === p);
     return platform?.label || p;
-  }).join(', ')}\n\n`;
-  text += `Services & Pricing:\n`;
+  }).join(' • ') || 'Available on request';
+
+  let text = `✨ ${card.name.toUpperCase()} ✨\n`;
+  text += `MEDIA KIT & RATE CARD\n`;
+  text += `━━━━━━━━━━━━━━━━\n\n`;
+  text += `📊 Audience: ${formatNumber(card.audience_size || 0)} followers\n`;
+  text += `💬 Engagement: ${card.engagement_rate || 0}%\n`;
+  text += `📱 Platforms: ${platforms}\n\n`;
+  text += `💼 SERVICES & PRICING\n`;
   card.pricing_tiers?.forEach(tier => {
-    text += `- ${tier.service}: ${formatCurrency(tier.price || 0)}\n`;
+    text += `• ${tier.service} — ${formatCurrency(tier.price || 0)}\n`;
     if (tier.description) text += `  ${tier.description}\n`;
   });
-  return text;
+  return `${text}\n━━━━━━━━━━━━━━━━\n📩 Available for brand collaborations. Let's connect!`;
 }

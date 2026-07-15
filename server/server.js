@@ -125,6 +125,21 @@ function sendValidation(res, errors) {
   return res.status(400).json({ error: errors.join(' ') });
 }
 
+// A linked record must always belong to the authenticated user. The database
+// foreign key proves that a deal exists, but cannot enforce its ownership.
+function validateOwnedDeal(req, res, next) {
+  const dealId = cleanOptionalString(req.body.deal_id, 80);
+  req.dealId = dealId;
+
+  if (!dealId) return next();
+
+  db.get('SELECT id FROM deals WHERE id = ? AND user_id = ?', [dealId, req.userId], (err, deal) => {
+    if (err) return res.status(500).json({ error: 'Unable to validate linked deal' });
+    if (!deal) return res.status(400).json({ error: 'Linked deal not found' });
+    next();
+  });
+}
+
 function getPagination(req) {
   const rawLimit = Number(req.query.limit || 100);
   const rawOffset = Number(req.query.offset || 0);
@@ -474,7 +489,7 @@ app.get('/api/content', authMiddleware, (req, res) => {
   });
 });
 
-app.post('/api/content', authMiddleware, (req, res) => {
+app.post('/api/content', authMiddleware, validateOwnedDeal, (req, res) => {
   const errors = [];
   const title = cleanString(req.body.title, 180);
   const platform = cleanString(req.body.platform, 40);
@@ -490,7 +505,7 @@ app.post('/api/content', authMiddleware, (req, res) => {
   const id = randomUUID();
   db.run(
     'INSERT INTO content (id, user_id, title, platform, content_type, status, scheduled_date, deal_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, req.userId, title, platform, contentType, status, cleanDate(req.body.scheduled_date), cleanOptionalString(req.body.deal_id, 80)],
+    [id, req.userId, title, platform, contentType, status, cleanDate(req.body.scheduled_date), req.dealId],
     function(err) {
       if (err) return res.status(500).json({ error: 'Unable to create content' });
       auditEvent(req, 'create', 'content', id, { status });
@@ -499,7 +514,7 @@ app.post('/api/content', authMiddleware, (req, res) => {
   );
 });
 
-app.put('/api/content/:id', authMiddleware, validateIdParam, (req, res) => {
+app.put('/api/content/:id', authMiddleware, validateIdParam, validateOwnedDeal, (req, res) => {
   db.get('SELECT * FROM content WHERE id = ? AND user_id = ?', [req.params.id, req.userId], (err, currentContent) => {
     if (err) return res.status(500).json({ error: 'Unable to load content' });
     if (!currentContent) return res.status(404).json({ error: 'Content not found' });
@@ -533,7 +548,7 @@ app.put('/api/content/:id', authMiddleware, validateIdParam, (req, res) => {
         status,
         req.body.scheduled_date !== undefined ? cleanDate(req.body.scheduled_date) : currentContent.scheduled_date,
         publishedDate,
-        req.body.deal_id !== undefined ? cleanOptionalString(req.body.deal_id, 80) : currentContent.deal_id,
+        req.body.deal_id !== undefined ? req.dealId : currentContent.deal_id,
         req.params.id,
         req.userId,
       ],
@@ -562,7 +577,7 @@ app.get('/api/income', authMiddleware, (req, res) => {
   });
 });
 
-app.post('/api/income', authMiddleware, (req, res) => {
+app.post('/api/income', authMiddleware, validateOwnedDeal, (req, res) => {
   const errors = [];
   const source = cleanString(req.body.source, 160);
   const amount = cleanNumber(req.body.amount, null);
@@ -582,7 +597,7 @@ app.post('/api/income', authMiddleware, (req, res) => {
   const id = randomUUID();
   db.run(
     'INSERT INTO income (id, user_id, source, amount, currency, date, deal_id, description, category, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, req.userId, source, amount, currency, date, cleanOptionalString(req.body.deal_id, 80), cleanOptionalString(req.body.description, 2000), category, status],
+    [id, req.userId, source, amount, currency, date, req.dealId, cleanOptionalString(req.body.description, 2000), category, status],
     function(err) {
       if (err) return res.status(500).json({ error: 'Unable to create income' });
       auditEvent(req, 'create', 'income', id, { status });
@@ -719,7 +734,7 @@ app.get('/api/dashboard', authMiddleware, dashboardLimiter, async (req, res) => 
 });
 
 app.get('/api/rate-cards', authMiddleware, (req, res) => {
-  db.all('SELECT * FROM rate_cards WHERE user_id = ?', [req.userId], (err, cards) => {
+  db.all('SELECT * FROM rate_cards WHERE user_id = ? ORDER BY is_default DESC, created_at DESC', [req.userId], (err, cards) => {
     if (err) return res.status(500).json({ error: 'Unable to load rate cards' });
     cards = cards || [];
     cards.forEach(c => {
@@ -753,15 +768,22 @@ app.post('/api/rate-cards', authMiddleware, (req, res) => {
   if (errors.length) return sendValidation(res, errors);
 
   const id = randomUUID();
-  db.run(
+  const isDefault = Boolean(req.body.is_default);
+  const createCard = () => db.run(
     'INSERT INTO rate_cards (id, user_id, name, platforms, services, audience_size, engagement_rate, demographics, pricing_tiers, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, req.userId, name, JSON.stringify(platforms), JSON.stringify(services), audienceSize, engagementRate, JSON.stringify({}), JSON.stringify(pricingTiers), req.body.is_default ? 1 : 0],
+    [id, req.userId, name, JSON.stringify(platforms), JSON.stringify(services), audienceSize, engagementRate, JSON.stringify({}), JSON.stringify(pricingTiers), isDefault ? 1 : 0],
     function(err) {
       if (err) return res.status(500).json({ error: 'Unable to create rate card' });
       auditEvent(req, 'create', 'rate_card', id);
       res.json({ id, user_id: req.userId });
     }
   );
+
+  if (!isDefault) return createCard();
+  db.run('UPDATE rate_cards SET is_default = 0 WHERE user_id = ?', [req.userId], function(clearErr) {
+    if (clearErr) return res.status(500).json({ error: 'Unable to set default rate card' });
+    createCard();
+  });
 });
 
 app.put('/api/rate-cards/:id', authMiddleware, validateIdParam, (req, res) => {
@@ -793,7 +815,7 @@ app.put('/api/rate-cards/:id', authMiddleware, validateIdParam, (req, res) => {
     requireValid(engagementRate !== null, 'Engagement rate must be a positive number.', errors);
     if (errors.length) return sendValidation(res, errors);
 
-    db.run(
+    const updateCard = () => db.run(
       `UPDATE rate_cards
        SET name = ?, platforms = ?, services = ?, audience_size = ?, engagement_rate = ?, pricing_tiers = ?, is_default = ?
        WHERE id = ? AND user_id = ?`,
@@ -804,6 +826,12 @@ app.put('/api/rate-cards/:id', authMiddleware, validateIdParam, (req, res) => {
         res.json({ updated: this.changes });
       }
     );
+
+    if (!isDefault) return updateCard();
+    db.run('UPDATE rate_cards SET is_default = 0 WHERE user_id = ? AND id != ?', [req.userId, req.params.id], function(clearErr) {
+      if (clearErr) return res.status(500).json({ error: 'Unable to set default rate card' });
+      updateCard();
+    });
   });
 });
 
